@@ -1,3 +1,10 @@
 /project_instruction.md
 /requirement.md
-/docs/system-design.md
+*system-design.md
+/pharmacy_single_table_data.xlsx
+.DS_Store
+.env
+__pycache__/
+frontend/.next/
+frontend/node_modules/
+frontend/package-lock.json
