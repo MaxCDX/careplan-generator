@@ -1,3 +1,4 @@
+import logging
 import os
 from uuid import uuid4
 
@@ -8,6 +9,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
@@ -60,6 +62,8 @@ Patient information:
 
 @app.post("/care-plans/generate", response_model=CarePlanResponse)
 def generate_care_plan(request: CarePlanRequest):
+    logging.info("Received care plan generation request")
+
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is missing.")
@@ -68,13 +72,18 @@ def generate_care_plan(request: CarePlanRequest):
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     try:
+        logging.info("Starting LLM call")
         response = client.responses.create(
             model=model,
             input=build_prompt(request),
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"OpenAI request failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500, 
+            detail=f"OpenAI request failed: {exc}"
+        ) from exc
 
+    logging.info("LLM call completed")
     care_plan = response.output_text
     record = {
         "id": str(uuid4()),
@@ -89,3 +98,10 @@ def generate_care_plan(request: CarePlanRequest):
 @app.get("/care-plans")
 def list_care_plans():
     return care_plans
+
+@app.get("/care-plans/{care_plan_id}")
+def get_care_plan_by_id(care_plan_id: str):
+    for care_plan in care_plans:
+        if care_plan["id"] == care_plan_id:
+            return care_plan
+    raise HTTPException(status_code=404, detail="Care plan not found")
