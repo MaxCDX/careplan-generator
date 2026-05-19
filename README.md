@@ -1,136 +1,136 @@
 # Care Plan Generator
 
-> Current Status: Day 2 — Minimal Synchronous MVP
+> Current Status: Day 3 — PostgreSQL-backed Workflow MVP
 
-Care Plan Generator is a healthcare workflow system designed for specialty pharmacy staff.
+Care Plan Generator is a healthcare workflow system for specialty pharmacy staff. It lets an operator submit patient, provider, medication, diagnosis, and clinical-note information, then generates a pharmacist-review care plan draft using an LLM.
 
-The system allows medical assistants to submit patient, provider, medication-order, and clinical information so the backend can generate a pharmacist-reviewed care plan draft while preserving workflow integrity and preparing for future validation, duplicate-detection, and reporting requirements.
-
----
-
-## Problem Being Solved
-
-Pharmacists currently spend about 20–40 minutes per patient creating care plans manually. These care plans are required for compliance and reimbursement, and the current workload creates operational backlog for already short-staffed teams.
-
-The goal of this project is not simply AI text generation. The long-term goal is to build a reliable healthcare workflow system around validation, duplicate detection, structured operational data, and AI-assisted drafting.
+This project is not just a GPT wrapper. The main engineering focus is workflow correctness: durable state, clear domain boundaries, validation, duplicate detection, and safe AI-assisted drafting.
 
 ---
 
-## Current Project Status
+## What It Does Now
 
-The project currently contains a runnable Day 2 MVP.
-
-The MVP demonstrates a complete synchronous workflow:
+The current MVP supports a database-backed workflow:
 
 ```text
 Frontend form
-→ FastAPI backend
-→ OpenAI synchronous generation
-→ in-memory storage
-→ frontend displays generated care plan
+→ POST /orders
+→ create/reuse Patient and Provider
+→ create Order(status="pending")
+→ POST /care-plans
+→ update Order(status="processing")
+→ call OpenAI synchronously
+→ create CarePlan
+→ update Order(status="completed")
+→ display generated care plan
 ```
 
-Current implementation includes:
+If generation fails:
 
-- FastAPI backend
-- Next.js frontend
-- OpenAI integration
-- Docker Compose setup
-- in-memory care plan storage
-- local development workflow
+```text
+Order(status="failed")
+Order.error_message is saved
+CarePlan is not created
+```
 
----
-
-## Intended Users
-
-- Medical assistants who enter patient, provider, order, and clinical information
-- Pharmacists who review and use the generated care plan draft
-- Providers whose information must remain consistent in the system
-- Admin or reporting users who need exportable operational data
-
-Patients are not direct users of the system.
+This means generated workflow state survives backend restarts because records are stored in PostgreSQL instead of Python memory.
 
 ---
 
-## Current MVP Scope
+## Tech Stack
 
-The current MVP can:
-
-- accept patient, provider, medication, and clinical-note inputs
-- synchronously generate a pharmacist-style care plan draft using OpenAI
-- display the generated care plan in the frontend
-- store generated records temporarily in backend memory
-
-The current MVP intentionally does NOT yet include:
-
-- PostgreSQL persistence
-- strict validation rules
-- duplicate detection
-- warning vs blocking error handling
-- Redis/Celery background jobs
-- WebSocket or polling status updates
-- authentication
-- PDF upload
-- EHR integration
-- insurance/billing integration
-- production PHI handling
-- monitoring or cloud deployment
-
-These features will be added incrementally in later phases.
+- Frontend: Next.js, React, TypeScript
+- Backend: FastAPI, Pydantic, SQLAlchemy, OpenAI SDK
+- Database: PostgreSQL
+- Infrastructure: Docker, Docker Compose
 
 ---
 
-## Planned Architecture
+## Architecture
 
-The planned long-term architecture consists of:
+```text
+Browser / Next.js
+        ↓ HTTP
+FastAPI backend
+        ↓ SQLAlchemy
+PostgreSQL
 
-- a Next.js frontend for structured intake workflows
-- a Python FastAPI backend for validation, orchestration, and workflow control
-- PostgreSQL for structured persistence
-- an LLM integration layer for care plan generation
-- asynchronous background processing in later phases
-- future reporting/export workflows
+FastAPI backend
+        ↓ OpenAI API
+LLM-generated pharmacist-review draft
+```
 
----
-
-## Current Tech Stack
-
-### Backend
-
-- FastAPI
-- Pydantic
-- OpenAI SDK
-- python-dotenv
-- Uvicorn
-
-### Frontend
-
-- Next.js
-- React
-- TypeScript
-
-### Infrastructure
-
-- Docker
-- Docker Compose
+The frontend never talks directly to PostgreSQL or OpenAI. The backend owns workflow state transitions, persistence, and LLM orchestration.
 
 ---
 
-## Important Product Rules
+## Database Design
 
-- AI output is a pharmacist-reviewed draft, not the clinical source of truth.
-- Real PHI must not be committed to the repository or exposed in logs.
-- Validation and duplicate detection are core workflow requirements, even if not fully implemented yet.
-- Workflow integrity matters more than UI polish.
+```text
+┌──────────────┐        ┌──────────────┐
+│   Patient    │        │   Provider   │
+├──────────────┤        ├──────────────┤
+│ id           │        │ id           │
+│ name         │        │ name         │
+│ mrn          │        │ npi          │
+│ dob          │        └──────┬───────┘
+└──────┬───────┘               │
+       │                       │
+       ▼                       ▼
+┌────────────────────────────────────────────┐
+│                   Order                    │
+├────────────────────────────────────────────┤
+│ id                                         │
+│ patient_id  → patients.id                  │
+│ provider_id → providers.id                 │
+│ medication                                 │
+│ diagnosis                                  │
+│ clinical_notes                             │
+│ status: pending / processing / completed / failed │
+│ error_message                              │
+│ created_at                                 │
+│ updated_at                                 │
+└─────────────────────┬──────────────────────┘
+                      │
+                      ▼
+┌────────────────────────────────────────────┐
+│                 CarePlan                   │
+├────────────────────────────────────────────┤
+│ id                                         │
+│ order_id → orders.id                       │
+│ care_plan_content                          │
+│ model                                      │
+│ created_at                                 │
+└────────────────────────────────────────────┘
+```
+
+Relationship summary:
+
+```text
+Patient  1 → many Orders
+Provider 1 → many Orders
+Order    1 → zero or one CarePlan
+```
+
+`Order` owns workflow state. `CarePlan` owns generated output. Status belongs on `Order` because `pending`, `processing`, and `failed` can happen before a care plan exists.
 
 ---
 
-## Repository Structure
+## Project Structure
 
 ```text
 careplan-generator/
 ├── backend/
+│   └── app/
+│       ├── main.py          # FastAPI app setup and router registration
+│       ├── database.py      # SQLAlchemy engine/session/Base
+│       ├── models.py        # Patient, Provider, Order, CarePlan tables
+│       ├── patients/        # patient schemas/repository aliases
+│       ├── providers/       # provider schemas/repository aliases
+│       ├── orders/          # /orders routes, schemas, repository
+│       └── care_plans/      # /care-plans routes, prompt, repository
 ├── frontend/
+│   └── app/page.tsx         # form UI and two-step API flow
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -138,135 +138,163 @@ careplan-generator/
 
 ---
 
+## API
+
+### `POST /orders`
+
+Creates a durable order/request record.
+
+```json
+{
+  "patient_name": "Example Patient",
+  "mrn": "MRN-EXAMPLE-001",
+  "provider_name": "Dr. Example Provider",
+  "provider_npi": "0000000000",
+  "diagnosis": "Example diagnosis for demo purposes only",
+  "medication": "Example specialty medication",
+  "clinical_notes": "Fictional demo note. This example contains no real patient, provider, or clinical information."
+}
+```
+
+### `POST /care-plans`
+
+Generates a care plan for an existing order.
+
+```json
+{
+  "order_id": "order-uuid"
+}
+```
+
+Other endpoints:
+
+```text
+GET /orders
+GET /orders/{order_id}
+GET /care-plans
+GET /care-plans/{care_plan_id}
+```
+
+---
+
+## LLM Output Safety
+
+The prompt generates a structured specialty pharmacy care plan draft and includes guardrails:
+
+- output is for pharmacist review, not final medical advice
+- use only provided patient/provider/order information
+- do not fabricate missing clinical facts
+- use placeholders such as `[WEIGHT NOT PROVIDED]`, `[LAB VALUES NOT PROVIDED]`, and `[LICENSE NUMBER]`
+
+Missing clinical data should stay visibly missing. A placeholder is safer than a plausible hallucination.
+
+---
+
 ## How to Run
 
-### Docker Compose
-
-1. Create your env file:
+Create a local environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-2. Add your real `OPENAI_API_KEY` to `.env`.
+Add your real OpenAI API key to `.env`.
 
-3. Start the application:
+Example Docker values:
+
+```env
+OPENAI_API_KEY=your_real_key_here
+OPENAI_MODEL=gpt-4o-mini
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+DATABASE_URL=postgresql+psycopg2://careplan:careplan@db:5432/careplan
+```
+
+Start the app:
 
 ```bash
 docker compose up --build
 ```
 
-4. Open:
-
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- Stored records: http://localhost:8000/care-plans
-
----
-
-## Local Development Without Docker
-
-### Backend
-
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-export OPENAI_API_KEY=your_key_here
-export OPENAI_MODEL=gpt-4o-mini
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Frontend
-
-In a second terminal:
-
-```bash
-cd frontend
-npm install
-export NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-npm run dev
-```
-
-Then open:
+Open:
 
 ```text
-http://localhost:3000
+Frontend: http://localhost:3000
+Backend:  http://localhost:8000
 ```
 
 ---
 
-## API
+## Inspect the Database
 
-### `POST /care-plans/generate`
+TablePlus connection:
 
-Example request:
-
-```json
-{
-  "patient_name": "John Doe",
-  "mrn": "123456",
-  "provider_name": "Dr. Smith",
-  "provider_npi": "1234567890",
-  "diagnosis": "Type 2 diabetes",
-  "medication": "Metformin",
-  "clinical_notes": "Patient has type 2 diabetes and needs a care plan."
-}
+```text
+Host: localhost
+Port: 5432
+User: careplan
+Password: careplan
+Database: careplan
 ```
 
-Example response:
+Useful commands:
 
-```json
-{
-  "id": "uuid",
-  "care_plan": "generated text"
-}
+```bash
+docker compose exec db psql -U careplan -d careplan -c "select count(*) from patients; select count(*) from providers; select count(*) from orders; select count(*) from care_plans;"
 ```
 
-### `GET /care-plans`
+Reset local database:
 
-Returns all generated records currently held in memory.
+```bash
+docker compose down -v
+docker compose up --build
+```
 
----
-
-## Current MVP Limitations
-
-The current system is intentionally naive so later architectural improvements are motivated by real operational pain points.
-
-Current limitations include:
-
-- synchronous OpenAI requests block the user request
-- generated records disappear after backend restart
-- no persistent database
-- no job tracking
-- no retry system
-- no structured validation pipeline
-- no duplicate-detection workflow
-- unstructured LLM output formatting
-
-These limitations are intentional learning steps before introducing more advanced infrastructure.
+Warning: `down -v` deletes all local PostgreSQL volume data.
 
 ---
 
-## Development Roadmap
+## Compliance Considerations
 
-- Requirements analysis and system design
-- Build synchronous MVP workflow
-- Add PostgreSQL persistence
-- Introduce validation and duplicate detection
-- Add asynchronous care plan generation
-- Add reporting/export support
-- Add monitoring and deployment support
+The repository should use only fictional or de-identified example data.
+
+Production healthcare deployment would require additional compliance and operational controls, including:
+
+- HIPAA-compliant infrastructure
+- PHI encryption at rest and in transit
+- audit logging and access tracing
+- role-based access control (RBAC)
+- secure secret management
+- retention and deletion policies
+- vendor/compliance review for external LLM providers
+- monitoring and incident response workflows
+
+The generated care plan is a pharmacist-review draft and not final medical advice.
+
+## Current Limitations
+
+Not implemented yet:
+
+- Alembic migrations
+- strict validation
+- duplicate detection
+- Redis/Celery background generation
+- polling or WebSocket status updates
+- authentication
+- audit logging
+- PDF upload
+- production PHI handling
+- monitoring/deployment
+
+These are intentionally deferred so each future architecture layer solves a real pain point.
 
 ---
 
-## Safety and Compliance Note
+## Core Summary
 
-This repository should use only fictional or de-identified data until PHI handling scope is explicitly confirmed.
-
-Real PHI must never be committed, logged, or exposed in error messages.
-
----
-
-This project is being developed incrementally with a strong focus on validation, workflow integrity, operational correctness, and safe AI-assisted healthcare workflows.
+```text
+Frontend submits intent.
+Backend owns workflow.
+PostgreSQL owns durable state.
+Order owns lifecycle.
+CarePlan owns generated output.
+```
