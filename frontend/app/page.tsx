@@ -46,19 +46,34 @@ export default function Home() {
 
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
-      const response = await fetch(`${apiBaseUrl}/care-plans/generate`, {
+
+      // Day 3 flow step 1: create a durable Order workflow record first.
+      const orderResponse = await fetch(`${apiBaseUrl}/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       })
 
-      const data = await response.json()
+      const orderData = await orderResponse.json()
 
-      if (!response.ok) {
-        throw new Error(data.detail || 'Request failed.')
+      if (!orderResponse.ok) {
+        throw new Error(orderData.detail || 'Order creation failed.')
       }
 
-      setCarePlan(data.care_plan)
+      // Day 3 flow step 2: generate a CarePlan artifact from the saved order_id.
+      const carePlanResponse = await fetch(`${apiBaseUrl}/care-plans`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderData.id }),
+      })
+
+      const carePlanData = await carePlanResponse.json()
+
+      if (!carePlanResponse.ok) {
+        throw new Error(carePlanData.detail || 'Care plan generation failed.')
+      }
+
+      setCarePlan(carePlanData.care_plan)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed.')
     } finally {

@@ -1,10 +1,41 @@
-/project_instruction.md
-/requirement.md
-*system-design.md
-/pharmacy_single_table_data.xlsx
-.DS_Store
+# Environment / secrets
 .env
+.env.*
+!.env.example
+requirement.md
+project_instruction.md
+
+# Local interview/prep notes
+interview.md
+
+# Uploaded or local mock data files
+pharmacy_single_table_data.xlsx
+*.xls
+*.xlsx
+*.csv
+
+# Python
 __pycache__/
-frontend/.next/
-frontend/node_modules/
-frontend/package-lock.json
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+
+# Node / frontend build output
+node_modules/
+.next/
+dist/
+build/
+
+# Docker / local generated artifacts
+*.log
+logs/
+*.pid
+*.seed
+*.dump
+*.sql
+
+# OS / editor
+.DS_Store
+.vscode/
