@@ -1,6 +1,6 @@
 # Care Plan Generator
 
-> Current Status: Day 3 — PostgreSQL-backed Workflow MVP
+> Current Status: Day 4 — Redis-backed Async Queue Submission MVP
 
 Care Plan Generator is a healthcare workflow system for specialty pharmacy staff. It lets an operator submit patient, provider, medication, diagnosis, and clinical-note information, then generates a pharmacist-review care plan draft using an LLM.
 
@@ -16,24 +16,23 @@ The current MVP supports a database-backed workflow:
 Frontend form
 → POST /orders
 → create/reuse Patient and Provider
-→ create Order(status="pending")
-→ POST /care-plans
-→ update Order(status="processing")
-→ call OpenAI synchronously
-→ create CarePlan
-→ update Order(status="completed")
-→ display generated care plan
+→ create Order(status="queued")
+→ enqueue order_id into Redis queue
+→ return HTTP 202 Accepted immediately
+
+(No worker consumes the queue yet.)
+(No CarePlan is generated yet.)
 ```
 
-If generation fails:
+If queue dispatch fails:
 
 ```text
 Order(status="failed")
 Order.error_message is saved
-CarePlan is not created
+Job is not queued
 ```
 
-This means generated workflow state survives backend restarts because records are stored in PostgreSQL instead of Python memory.
+Workflow state survives backend restarts because Orders are stored in PostgreSQL instead of Python process memory.
 
 ---
 
@@ -42,6 +41,7 @@ This means generated workflow state survives backend restarts because records ar
 - Frontend: Next.js, React, TypeScript
 - Backend: FastAPI, Pydantic, SQLAlchemy, OpenAI SDK
 - Database: PostgreSQL
+- Queue: Redis
 - Infrastructure: Docker, Docker Compose
 
 ---
@@ -49,18 +49,34 @@ This means generated workflow state survives backend restarts because records ar
 ## Architecture
 
 ```text
-Browser / Next.js
-        ↓ HTTP
-FastAPI backend
-        ↓ SQLAlchemy
-PostgreSQL
-
-FastAPI backend
-        ↓ OpenAI API
-LLM-generated pharmacist-review draft
+┌────────────────────┐
+│ Frontend (Next.js) │
+└─────────┬──────────┘
+          │ POST /orders
+          ▼
+┌────────────────────┐
+│  Backend (FastAPI) │
+└──────┬───────┬─────┘
+       │       │
+       │       └──────────────┐
+       ▼                      ▼
+┌────────────────┐   ┌────────────────┐
+│ PostgreSQL     │   │ Redis Queue    │
+│ Durable State  │   │ care_plan_jobs │
+└────────────────┘   └────────────────┘
 ```
 
-The frontend never talks directly to PostgreSQL or OpenAI. The backend owns workflow state transitions, persistence, and LLM orchestration.
+Current Day 4 request flow:
+
+```text
+1. Frontend submits form
+2. Backend creates/reuses Patient and Provider
+3. Backend creates Order(status="queued")
+4. Backend pushes order_id into Redis queue
+5. Backend immediately returns HTTP 202 Accepted
+```
+
+The frontend never talks directly to PostgreSQL or Redis. The backend owns workflow state transitions, persistence, and queue dispatch.
 
 ---
 
@@ -86,7 +102,7 @@ The frontend never talks directly to PostgreSQL or OpenAI. The backend owns work
 │ medication                                 │
 │ diagnosis                                  │
 │ clinical_notes                             │
-│ status: pending / processing / completed / failed │
+│ status: queued / processing / completed / failed  │
 │ error_message                              │
 │ created_at                                 │
 │ updated_at                                 │
@@ -127,10 +143,11 @@ careplan-generator/
 │       ├── models.py        # Patient, Provider, Order, CarePlan tables
 │       ├── patients/        # patient schemas/repository aliases
 │       ├── providers/       # provider schemas/repository aliases
-│       ├── orders/          # /orders routes, schemas, repository
-│       └── care_plans/      # /care-plans routes, prompt, repository
+│       ├── orders/          # queued order workflow routes/schemas/repository
+│       ├── care_plans/      # future background generation logic
+│       └── queue.py         # Redis queue dispatch helper
 ├── frontend/
-│   └── app/page.tsx         # form UI and two-step API flow
+│   └── app/page.tsx         # form UI and async queue submission flow
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -142,7 +159,7 @@ careplan-generator/
 
 ### `POST /orders`
 
-Creates a durable order/request record.
+Creates a durable queued workflow request and immediately returns HTTP 202 Accepted.
 
 ```json
 {
@@ -156,23 +173,12 @@ Creates a durable order/request record.
 }
 ```
 
-### `POST /care-plans`
-
-Generates a care plan for an existing order.
-
-```json
-{
-  "order_id": "order-uuid"
-}
-```
-
-Other endpoints:
+Current endpoints:
 
 ```text
+POST /orders
 GET /orders
 GET /orders/{order_id}
-GET /care-plans
-GET /care-plans/{care_plan_id}
 ```
 
 ---
@@ -207,6 +213,8 @@ OPENAI_API_KEY=your_real_key_here
 OPENAI_MODEL=gpt-4o-mini
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 DATABASE_URL=postgresql+psycopg2://careplan:careplan@db:5432/careplan
+REDIS_URL=redis://redis:6379/0
+CARE_PLAN_QUEUE_NAME=care_plan_jobs
 ```
 
 Start the app:
@@ -277,8 +285,9 @@ Not implemented yet:
 - Alembic migrations
 - strict validation
 - duplicate detection
-- Redis/Celery background generation
-- polling or WebSocket status updates
+- worker does not consume Redis queue yet
+- no background LLM generation yet
+- polling or WebSocket completion updates
 - authentication
 - audit logging
 - PDF upload
@@ -295,6 +304,7 @@ These are intentionally deferred so each future architecture layer solves a real
 Frontend submits intent.
 Backend owns workflow.
 PostgreSQL owns durable state.
+Redis owns queued job dispatch.
 Order owns lifecycle.
-CarePlan owns generated output.
+CarePlan will be generated later by a worker.
 ```
