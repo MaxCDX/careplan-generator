@@ -12,6 +12,12 @@ type FormData = {
   clinical_notes: string
 }
 
+type QueuedOrder = {
+  order_id: string
+  status: string
+  message: string
+}
+
 const initialFormData: FormData = {
   patient_name: '',
   mrn: '',
@@ -34,7 +40,7 @@ const fields: Array<{ name: keyof FormData; label: string; multiline?: boolean }
 
 export default function Home() {
   const [formData, setFormData] = useState<FormData>(initialFormData)
-  const [carePlan, setCarePlan] = useState('')
+  const [queuedOrder, setQueuedOrder] = useState<QueuedOrder | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -42,12 +48,11 @@ export default function Home() {
     event.preventDefault()
     setLoading(true)
     setError('')
-    setCarePlan('')
+    setQueuedOrder(null)
 
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
 
-      // Day 3 flow step 1: create a durable Order workflow record first.
       const orderResponse = await fetch(`${apiBaseUrl}/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,23 +62,10 @@ export default function Home() {
       const orderData = await orderResponse.json()
 
       if (!orderResponse.ok) {
-        throw new Error(orderData.detail || 'Order creation failed.')
+        throw new Error(orderData.detail || 'Order submission failed.')
       }
 
-      // Day 3 flow step 2: generate a CarePlan artifact from the saved order_id.
-      const carePlanResponse = await fetch(`${apiBaseUrl}/care-plans`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: orderData.id }),
-      })
-
-      const carePlanData = await carePlanResponse.json()
-
-      if (!carePlanResponse.ok) {
-        throw new Error(carePlanData.detail || 'Care plan generation failed.')
-      }
-
-      setCarePlan(carePlanData.care_plan)
+      setQueuedOrder(orderData)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed.')
     } finally {
@@ -105,16 +97,20 @@ export default function Home() {
         ))}
 
         <button type="submit" disabled={loading}>
-          {loading ? 'Generating care plan...' : 'Generate care plan'}
+          {loading ? 'Submitting request...' : 'Submit care plan request'}
         </button>
       </form>
 
       {error && <p style={{ color: 'crimson' }}>{error}</p>}
 
-      {carePlan && (
+      {queuedOrder && (
         <section style={{ marginTop: 24 }}>
-          <h2>Generated Care Plan</h2>
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{carePlan}</pre>
+          <h2>Request Accepted</h2>
+          <p>{queuedOrder.message}</p>
+          <p>
+            Order ID: <code>{queuedOrder.order_id}</code>
+          </p>
+          <p>Status: {queuedOrder.status}</p>
         </section>
       )}
     </main>

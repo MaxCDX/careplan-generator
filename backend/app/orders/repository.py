@@ -7,7 +7,7 @@ from app.providers.repository import get_or_create_provider
 
 
 def create_order(db: Session, data: OrderCreate) -> Order:
-    """Create a durable order workflow record from validated API input.
+    """Create a durable queued order workflow record from validated API input.
 
     Reuses existing Patient/Provider rows when MRN/NPI already exist.
     Returns the persisted Order with related Patient/Provider loaded.
@@ -22,11 +22,23 @@ def create_order(db: Session, data: OrderCreate) -> Order:
         medication=data.medication,
         diagnosis=data.diagnosis,
         clinical_notes=data.clinical_notes,
-        status="pending",
+        status="queued",
     )
     db.add(order)
     db.commit()
     return get_order(db, order.id)  # type: ignore[return-value]
+
+
+def mark_order_failed(db: Session, order_id: str, error_message: str) -> None:
+    """Persist a safe failed state when dispatch cannot be completed."""
+    order = db.query(Order).filter(Order.id == order_id).one_or_none()
+    if not order:
+        return
+
+    order.status = "failed"
+    order.error_message = error_message[:1000]
+    db.add(order)
+    db.commit()
 
 
 def list_orders(db: Session) -> list[Order]:

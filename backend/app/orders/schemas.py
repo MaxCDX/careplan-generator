@@ -18,6 +18,14 @@ class OrderCreate(BaseModel):
     clinical_notes: str
 
 
+class OrderAccepted(BaseModel):
+    """Response body for accepted Day 4 queued generation requests."""
+
+    order_id: str
+    status: str
+    message: str
+
+
 class OrderRead(BaseModel):
     """Response body for Order APIs with nested patient/provider summaries."""
 

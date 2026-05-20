@@ -15,6 +15,16 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: ./backend
     ports:
@@ -23,8 +33,12 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://careplan:careplan@db:5432/careplan}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CARE_PLAN_QUEUE_NAME: ${CARE_PLAN_QUEUE_NAME:-care_plan_jobs}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   frontend:
