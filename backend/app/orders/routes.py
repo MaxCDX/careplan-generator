@@ -9,7 +9,7 @@ from app.orders import repository
 from app.orders.schemas import OrderAccepted, OrderCreate, OrderRead
 from app.patients.schemas import PatientRead
 from app.providers.schemas import ProviderRead
-from app.queue import enqueue_care_plan_job
+from app.tasks.care_plan_tasks import generate_care_plan_task
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -48,9 +48,9 @@ def create_order(data: OrderCreate, db: Session = Depends(get_db)):
     order = repository.create_order(db, data)
 
     try:
-        enqueue_care_plan_job(order.id)
+        generate_care_plan_task.delay(order.id)
     except Exception as exc:
-        logging.exception("Care plan queue dispatch failed for order %s", order.id)
+        logging.exception("Care plan Celery dispatch failed for order %s", order.id)
         try:
             repository.mark_order_failed(db, order.id, QUEUE_FAILURE_MESSAGE)
         except Exception:
