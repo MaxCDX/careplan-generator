@@ -33,8 +33,23 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://careplan:careplan@db:5432/careplan}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      CARE_PLAN_QUEUE_NAME: ${CARE_PLAN_QUEUE_NAME:-care_plan_jobs}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    build: ./backend
+    command: celery -A app.celery_app.celery_app worker --loglevel=INFO
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://careplan:careplan@db:5432/careplan}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
     depends_on:
       db:
         condition: service_healthy
