@@ -25,8 +25,8 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Initialize local Day 3 database tables when the FastAPI app starts."""
-    # Day 3 learning shortcut. In production, use Alembic migrations instead of
+    """Initialize local development database tables when the FastAPI app starts."""
+    # Learning-project shortcut. In production, use Alembic migrations instead of
     # creating tables automatically at application startup.
     init_db()
 

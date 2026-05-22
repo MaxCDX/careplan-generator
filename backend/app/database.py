@@ -21,7 +21,7 @@ Base = declarative_base()
 
 
 def init_db() -> None:
-    """Create database tables for the Day 3 learning MVP.
+    """Create database tables for local development.
 
     TODO: Replace create_all with Alembic migrations before production use so
     schema changes are reviewed, versioned, reversible, and safe for real data.

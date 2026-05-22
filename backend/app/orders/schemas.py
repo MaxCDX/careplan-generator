@@ -7,7 +7,7 @@ from app.providers.schemas import ProviderRead
 
 
 class OrderCreate(BaseModel):
-    """Request body for creating an Order from the current frontend form."""
+    """Request body for creating an Order from the frontend intake form."""
 
     patient_name: str
     mrn: str
@@ -19,7 +19,7 @@ class OrderCreate(BaseModel):
 
 
 class OrderAccepted(BaseModel):
-    """Response body for accepted Day 4 queued generation requests."""
+    """Response body for an accepted Celery-backed generation request."""
 
     order_id: str
     status: str

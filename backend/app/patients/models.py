@@ -1,4 +1,4 @@
-"""Domain alias for the shared SQLAlchemy Patient model used in Day 3."""
+"""Domain alias for the shared SQLAlchemy Patient model."""
 
 from app.models import Patient
 

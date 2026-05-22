@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +14,36 @@ from app.care_plans.models import CarePlan
 from app.orders import repository as order_repository
 
 router = APIRouter(prefix="/care-plans", tags=["care-plans"])
+
+MOCK_CARE_PLAN_CONTENT = """Problem list:
+- Mock problem list for local care plan testing.
+
+Goals:
+- Mock goal for local care plan testing.
+
+Pharmacist interventions:
+- Mock pharmacist intervention for local care plan testing.
+
+Monitoring plan:
+- Mock monitoring plan for local care plan testing."""
+
+
+def get_llm_provider() -> str:
+    """Return the configured LLM provider, defaulting to real OpenAI."""
+    return os.getenv("LLM_PROVIDER", "openai").lower()
+
+
+def get_mock_llm_delay_secs() -> float:
+    """Return optional mock LLM delay for local Celery-flow testing."""
+    return float(os.getenv("MOCK_LLM_DELAY_SECS", "0"))
+
+
+def generate_mock_care_plan_content() -> str:
+    """Return deterministic mock care plan content for local development."""
+    delay_secs = get_mock_llm_delay_secs()
+    if delay_secs > 0:
+        time.sleep(delay_secs)
+    return MOCK_CARE_PLAN_CONTENT
 
 
 def build_prompt(order) -> str:
@@ -138,7 +169,10 @@ END OF CARE PLAN
 
 
 def generate_care_plan_content(order, model: str) -> str:
-    """Call OpenAI synchronously and return generated care plan text."""
+    """Return generated care plan text using the configured LLM provider."""
+    if get_llm_provider() == "mock":
+        return generate_mock_care_plan_content()
+
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is missing.")
@@ -161,10 +195,10 @@ def serialize_care_plan(care_plan: CarePlan) -> CarePlanRead:
 
 @router.post("", response_model=CarePlanRead)
 def generate_care_plan(data: CarePlanGenerateRequest, db: Session = Depends(get_db)):
-    """Generate and persist a CarePlan for an existing Order.
+    """Directly generate and persist a CarePlan for an existing Order.
 
-    Day 3 keeps generation synchronous, but persists status transitions so the
-    same Order workflow can later move to a background worker.
+    The primary order-submission path is POST /orders -> Celery. This endpoint
+    remains available as a manual synchronous generation path for a known Order.
     """
     order = order_repository.get_order(db, data.order_id)
     if not order:

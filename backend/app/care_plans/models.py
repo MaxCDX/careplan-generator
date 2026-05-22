@@ -1,4 +1,4 @@
-"""Domain alias for the shared SQLAlchemy CarePlan model used in Day 3."""
+"""Domain alias for the shared SQLAlchemy CarePlan model."""
 
 from app.models import CarePlan
 

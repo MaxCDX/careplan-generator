@@ -14,7 +14,7 @@ def new_uuid() -> str:
 
 
 class Patient(Base):
-    """Reusable patient identity record keyed by MRN for the Day 3 MVP."""
+    """Reusable patient identity record keyed by MRN."""
 
     __tablename__ = "patients"
 
