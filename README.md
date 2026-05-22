@@ -1,6 +1,6 @@
 # Care Plan Generator
 
-> Current Status: Day 4 — Redis-backed Async Queue Submission MVP
+> Current Status: Day 5 — Celery-based Async Care Plan Generation MVP
 
 Care Plan Generator is a healthcare workflow system for specialty pharmacy staff. It lets an operator submit patient, provider, medication, diagnosis, and clinical-note information, then generates a pharmacist-review care plan draft using an LLM.
 
@@ -17,11 +17,14 @@ Frontend form
 → POST /orders
 → create/reuse Patient and Provider
 → create Order(status="queued")
-→ enqueue order_id into Redis queue
+→ dispatch Celery task
 → return HTTP 202 Accepted immediately
 
-(No worker consumes the queue yet.)
-(No CarePlan is generated yet.)
+Celery worker consumes the task asynchronously.
+Worker generates a CarePlan using an LLM.
+Worker stores CarePlan in PostgreSQL.
+Order status transitions:
+queued → processing → completed / failed
 ```
 
 If queue dispatch fails:
@@ -41,7 +44,7 @@ Workflow state survives backend restarts because Orders are stored in PostgreSQL
 - Frontend: Next.js, React, TypeScript
 - Backend: FastAPI, Pydantic, SQLAlchemy, OpenAI SDK
 - Database: PostgreSQL
-- Queue: Redis
+- Async Processing: Celery, Redis
 - Infrastructure: Docker, Docker Compose
 
 ---
@@ -49,34 +52,52 @@ Workflow state survives backend restarts because Orders are stored in PostgreSQL
 ## Architecture
 
 ```text
-┌────────────────────┐
-│ Frontend (Next.js) │
-└─────────┬──────────┘
-          │ POST /orders
-          ▼
-┌────────────────────┐
-│  Backend (FastAPI) │
-└──────┬───────┬─────┘
-       │       │
-       │       └──────────────┐
-       ▼                      ▼
-┌────────────────┐   ┌────────────────┐
-│ PostgreSQL     │   │ Redis Queue    │
-│ Durable State  │   │ care_plan_jobs │
-└────────────────┘   └────────────────┘
+┌─────────────┐  ① request   ┌─────────────┐
+│  Frontend   │ ───────────→ │ Web Server  │
+│ (Next.js)   │              │ (FastAPI)   │
+└─────────────┘              └──────┬──────┘
+      ▲                             │
+      │                             ├────② persist────→ ┌─────────────┐
+      │                             │  Order(status=   │ PostgreSQL  │
+      │                             │     "queued")    │ Durable DB  │
+      │                             │  ←── success ──  └─────────────┘
+      │                             │
+      │                             ├────③ dispatch──→ ┌─────────────┐
+      │                             │  Celery task     │    Redis    │
+      │                             │  ←── success ──  │   Broker    │
+      │     ④ HTTP 202 Accepted     │                  └──────┬──────┘
+      └─────────────────────────────┘                         │
+                                                              │ ⑤ consume task
+                                                              ▼
+                                                       ┌─────────────┐
+                                                       │   Worker    │
+                                                       │  (Celery)   │
+                                                       └──────┬──────┘
+                                                              │
+                                                              │ ⑥ call LLM
+                                                              │
+                                                              ├────⑦ persist────→ PostgreSQL
+                                                              │   CarePlan +
+                                                              │   Order(status="completed")
+                                                              │
+                                                              ▼
+                                                   Frontend still does not know.
+                                                   Manual refresh is required.
 ```
 
-Current Day 4 request flow:
+Current Day 5 async flow:
 
 ```text
 1. Frontend submits form
 2. Backend creates/reuses Patient and Provider
 3. Backend creates Order(status="queued")
-4. Backend pushes order_id into Redis queue
+4. Backend dispatches Celery task
 5. Backend immediately returns HTTP 202 Accepted
+6. Celery worker consumes task asynchronously
+7. Worker generates CarePlan using mock or real LLM
+8. Worker stores CarePlan and updates Order status
+9. Frontend still does not auto-refresh yet
 ```
-
-The frontend never talks directly to PostgreSQL or Redis. The backend owns workflow state transitions, persistence, and queue dispatch.
 
 ---
 
@@ -138,16 +159,17 @@ Order    1 → zero or one CarePlan
 careplan-generator/
 ├── backend/
 │   └── app/
-│       ├── main.py          # FastAPI app setup and router registration
-│       ├── database.py      # SQLAlchemy engine/session/Base
-│       ├── models.py        # Patient, Provider, Order, CarePlan tables
-│       ├── patients/        # patient schemas/repository aliases
-│       ├── providers/       # provider schemas/repository aliases
-│       ├── orders/          # queued order workflow routes/schemas/repository
-│       ├── care_plans/      # future background generation logic
-│       └── queue.py         # Redis queue dispatch helper
+│       ├── main.py              # FastAPI app setup and router registration
+│       ├── database.py          # SQLAlchemy engine/session/Base
+│       ├── models.py            # Patient, Provider, Order, CarePlan tables
+│       ├── celery_app.py        # Celery application configuration
+│       ├── tasks/               # Celery async task definitions
+│       ├── patients/            # patient schemas/repository aliases
+│       ├── providers/           # provider schemas/repository aliases
+│       ├── orders/              # async order workflow routes/schemas/repository
+│       └── care_plans/          # care plan generation + mock LLM support
 ├── frontend/
-│   └── app/page.tsx         # form UI and async queue submission flow
+│   └── app/page.tsx             # form UI and async queue submission flow
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -159,7 +181,7 @@ careplan-generator/
 
 ### `POST /orders`
 
-Creates a durable queued workflow request and immediately returns HTTP 202 Accepted.
+Creates a durable async workflow request, dispatches a Celery background task, and immediately returns HTTP 202 Accepted.
 
 ```json
 {
@@ -211,10 +233,12 @@ Example Docker values:
 ```env
 OPENAI_API_KEY=your_real_key_here
 OPENAI_MODEL=gpt-4o-mini
+LLM_PROVIDER=mock
+MOCK_LLM_DELAY_SECS=2
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 DATABASE_URL=postgresql+psycopg2://careplan:careplan@db:5432/careplan
-REDIS_URL=redis://redis:6379/0
-CARE_PLAN_QUEUE_NAME=care_plan_jobs
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/1
 ```
 
 Start the app:
@@ -285,9 +309,11 @@ Not implemented yet:
 - Alembic migrations
 - strict validation
 - duplicate detection
-- worker does not consume Redis queue yet
-- no background LLM generation yet
-- polling or WebSocket completion updates
+- frontend still does not auto-refresh completed jobs
+- no polling / SSE / WebSocket updates yet
+- no distributed worker autoscaling yet
+- no dead-letter queue (DLQ)
+- no rate limiting / backpressure handling
 - authentication
 - audit logging
 - PDF upload
@@ -302,9 +328,11 @@ These are intentionally deferred so each future architecture layer solves a real
 
 ```text
 Frontend submits intent.
-Backend owns workflow.
+Backend owns workflow state.
 PostgreSQL owns durable state.
-Redis owns queued job dispatch.
-Order owns lifecycle.
-CarePlan will be generated later by a worker.
+Redis acts as Celery broker.
+Celery workers process background jobs.
+Order owns lifecycle state.
+CarePlan owns generated output.
+Frontend still does not know completion automatically.
 ```

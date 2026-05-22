@@ -32,6 +32,12 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="UTC",
     enable_utc=True,
+    # Acknowledge tasks after successful execution, not as soon as received.
+    task_acks_late=True,
+    # Requeue/reject a task if the worker child process dies mid-execution.
+    task_reject_on_worker_lost=True,
+    # Avoid one worker reserving too many tasks while others sit idle.
+    worker_prefetch_multiplier=1,
 )
 
 
