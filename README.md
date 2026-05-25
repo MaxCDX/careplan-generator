@@ -1,6 +1,6 @@
 # Care Plan Generator
 
-> Current Status: Day 5 — Celery-based Async Care Plan Generation MVP
+> Current Status: Day 6 — Polling-based Async Workflow Visibility MVP
 
 Care Plan Generator is a healthcare workflow system for specialty pharmacy staff. It lets an operator submit patient, provider, medication, diagnosis, and clinical-note information, then generates a pharmacist-review care plan draft using an LLM.
 
@@ -20,11 +20,20 @@ Frontend form
 → dispatch Celery task
 → return HTTP 202 Accepted immediately
 
+Frontend starts polling GET /orders/{id}/status every 3 seconds.
+
 Celery worker consumes the task asynchronously.
 Worker generates a CarePlan using an LLM.
 Worker stores CarePlan in PostgreSQL.
+Worker updates Order workflow state.
+
 Order status transitions:
 queued → processing → completed / failed
+
+Frontend polling stops when:
+- completed
+- failed
+- frontend timeout reached
 ```
 
 If queue dispatch fails:
@@ -52,51 +61,69 @@ Workflow state survives backend restarts because Orders are stored in PostgreSQL
 ## Architecture
 
 ```text
-┌─────────────┐  ① request   ┌─────────────┐
-│  Frontend   │ ───────────→ │ Web Server  │
-│ (Next.js)   │              │ (FastAPI)   │
-└─────────────┘              └──────┬──────┘
-      ▲                             │
-      │                             ├────② persist────→ ┌─────────────┐
-      │                             │  Order(status=   │ PostgreSQL  │
-      │                             │     "queued")    │ Durable DB  │
-      │                             │  ←── success ──  └─────────────┘
-      │                             │
-      │                             ├────③ dispatch──→ ┌─────────────┐
-      │                             │  Celery task     │    Redis    │
-      │                             │  ←── success ──  │   Broker    │
-      │     ④ HTTP 202 Accepted     │                  └──────┬──────┘
-      └─────────────────────────────┘                         │
-                                                              │ ⑤ consume task
-                                                              ▼
-                                                       ┌─────────────┐
-                                                       │   Worker    │
-                                                       │  (Celery)   │
-                                                       └──────┬──────┘
-                                                              │
-                                                              │ ⑥ call LLM
-                                                              │
-                                                              ├────⑦ persist────→ PostgreSQL
-                                                              │   CarePlan +
-                                                              │   Order(status="completed")
-                                                              │
-                                                              ▼
-                                                   Frontend still does not know.
-                                                   Manual refresh is required.
+┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
+│ Frontend   │   │ Backend    │   │ Database   │   │ Worker     │
+│ Next.js    │   │ FastAPI    │   │ PostgreSQL │   │ Celery     │
+└─────┬──────┘   └─────┬──────┘   └─────┬──────┘   └─────┬──────┘
+      │                │                │                │
+      │ 1. Submit      │                │                │
+      │───────────────▶│                │                │
+      │                │ 2. Save order  │                │
+      │                │───────────────▶│                │
+      │                │ status=queued  │                │
+      │                │                │                │
+      │ 3. HTTP 202    │                │                │
+      │◀───────────────│                │                │
+      │                │                │                │
+      │                │                │ 4. Take task   │
+      │                │                │◀───────────────│
+      │                │                │                │
+      │                │                │ 5. Save result │
+      │                │                │◀───────────────│
+      │                │                │ status=done    │
+      │                │                │                │
+      │ 6. Poll status │                │                │
+      │───────────────▶│ 7. Get status  │                │
+      │                │───────────────▶│                │
+      │                │◀───────────────│                │
+      │ 8. Return wait │                │                │
+      │◀───────────────│                │                │
+      │                │                │                │
+      │ (poll again)   │                │                │
+      │                │                │                │
+      │ 9. Poll status │                │                │
+      │───────────────▶│10. Get status  │                │
+      │                │───────────────▶│                │
+      │                │◀───────────────│                │
+      │11. Return done │                │                │
+      │◀───────────────│                │                │
+      │                │                │                │
+      │12. Render      │                │                │
 ```
 
-Current Day 5 async flow:
+Technology responsibilities:
+
+- Next.js frontend owns operator UI and polling behavior
+- FastAPI owns API orchestration and workflow state transitions
+- PostgreSQL owns durable workflow state and generated artifacts
+- Redis acts as the Celery message broker
+- Celery workers process long-running background LLM jobs
+
+Current Day 6 polling-based async flow:
 
 ```text
-1. Frontend submits form
-2. Backend creates/reuses Patient and Provider
-3. Backend creates Order(status="queued")
-4. Backend dispatches Celery task
-5. Backend immediately returns HTTP 202 Accepted
-6. Celery worker consumes task asynchronously
-7. Worker generates CarePlan using mock or real LLM
-8. Worker stores CarePlan and updates Order status
-9. Frontend still does not auto-refresh yet
+1. Next.js frontend submits form
+2. FastAPI backend creates/reuses Patient and Provider
+3. FastAPI backend creates Order(status="queued") in PostgreSQL
+4. FastAPI backend dispatches Celery task through Redis
+5. FastAPI backend immediately returns HTTP 202 Accepted
+6. Next.js frontend starts polling GET /orders/{id}/status every 3 seconds
+7. Celery worker consumes queued Redis task asynchronously
+8. Celery worker updates Order.status from queued → processing
+9. Celery worker generates CarePlan using mock or real LLM
+10. Celery worker stores CarePlan and updates Order.status → completed in PostgreSQL
+11. Next.js frontend polling detects completed status
+12. Next.js frontend displays generated result
 ```
 
 ---
@@ -201,6 +228,7 @@ Current endpoints:
 POST /orders
 GET /orders
 GET /orders/{order_id}
+GET /orders/{order_id}/status
 ```
 
 ---
@@ -309,8 +337,8 @@ Not implemented yet:
 - Alembic migrations
 - strict validation
 - duplicate detection
-- frontend still does not auto-refresh completed jobs
-- no polling / SSE / WebSocket updates yet
+- frontend currently uses polling instead of realtime push updates
+- no SSE / WebSocket realtime push infrastructure yet
 - no distributed worker autoscaling yet
 - no dead-letter queue (DLQ)
 - no rate limiting / backpressure handling
@@ -334,5 +362,6 @@ Redis acts as Celery broker.
 Celery workers process background jobs.
 Order owns lifecycle state.
 CarePlan owns generated output.
-Frontend still does not know completion automatically.
+Frontend polls workflow status every 3 seconds.
+Frontend timeout does not automatically mean backend failure.
 ```
