@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -11,7 +12,17 @@ from app.orders.routes import router as orders_router
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize local development database tables when the FastAPI app starts."""
+    # Learning-project shortcut. In production, use Alembic migrations instead of
+    # creating tables automatically at application startup.
+    init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 # The browser app runs on port 3000 during local development and calls this API.
 app.add_middleware(
@@ -21,14 +32,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    """Initialize local development database tables when the FastAPI app starts."""
-    # Learning-project shortcut. In production, use Alembic migrations instead of
-    # creating tables automatically at application startup.
-    init_db()
 
 
 # Keep main.py focused on application wiring; domain endpoints live in routers.

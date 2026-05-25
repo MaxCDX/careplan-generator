@@ -28,6 +28,17 @@ def make_order(status="queued"):
     )
 
 
+def make_completed_order_with_care_plan():
+    order = make_order(status="completed")
+    order.care_plan = SimpleNamespace(
+        id="care-plan-1",
+        care_plan_content="Generated care plan content",
+        model="test-model",
+        created_at=None,
+    )
+    return order
+
+
 def order_payload():
     return {
         "patient_name": "Test Patient",
@@ -97,3 +108,85 @@ def test_create_order_marks_order_failed_when_celery_dispatch_fails(monkeypatch)
     assert response.status_code == 503
     assert response.json()["detail"] == "Care plan request could not be queued. Please try again later."
     assert failed_orders == [("order-1", "Failed to enqueue care plan generation request.")]
+
+
+def test_get_order_returns_status_error_and_care_plan_content(monkeypatch):
+    def fake_get_order(db, order_id):
+        assert order_id == "order-1"
+        order = make_completed_order_with_care_plan()
+        order.error_message = None
+        return order
+
+    app.dependency_overrides[get_db] = lambda: object()
+    monkeypatch.setattr(repository, "get_order", fake_get_order)
+
+    try:
+        response = TestClient(app).get("/orders/order-1")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "order-1"
+    assert response.json()["status"] == "completed"
+    assert response.json()["error_message"] is None
+    assert response.json()["care_plan_content"] == "Generated care plan content"
+
+
+def test_get_order_returns_404_for_missing_order(monkeypatch):
+    app.dependency_overrides[get_db] = lambda: object()
+    monkeypatch.setattr(repository, "get_order", lambda db, order_id: None)
+
+    try:
+        response = TestClient(app).get("/orders/missing-order")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Order not found"
+
+
+def test_get_order_status_returns_minimal_polling_payload(monkeypatch):
+    def fake_get_order(db, order_id):
+        assert order_id == "order-1"
+        return make_completed_order_with_care_plan()
+
+    app.dependency_overrides[get_db] = lambda: object()
+    monkeypatch.setattr(repository, "get_order", fake_get_order)
+
+    try:
+        response = TestClient(app).get("/orders/order-1/status")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": "order-1",
+        "status": "completed",
+        "error_message": None,
+        "has_care_plan": True,
+        "care_plan_content": "Generated care plan content",
+    }
+
+    forbidden_fields = {
+        "patient",
+        "provider",
+        "medication",
+        "diagnosis",
+        "clinical_notes",
+        "created_at",
+        "updated_at",
+    }
+    assert forbidden_fields.isdisjoint(response.json())
+
+
+def test_get_order_status_returns_404_for_missing_order(monkeypatch):
+    app.dependency_overrides[get_db] = lambda: object()
+    monkeypatch.setattr(repository, "get_order", lambda db, order_id: None)
+
+    try:
+        response = TestClient(app).get("/orders/missing-order/status")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Order not found"

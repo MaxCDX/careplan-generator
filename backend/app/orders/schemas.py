@@ -38,5 +38,16 @@ class OrderRead(BaseModel):
     status: str
     error_message: str | None = None
     has_care_plan: bool
+    care_plan_content: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class OrderStatusRead(BaseModel):
+    """Minimal response body for frontend polling."""
+
+    id: str
+    status: str
+    error_message: str | None = None
+    has_care_plan: bool
+    care_plan_content: str | None = None

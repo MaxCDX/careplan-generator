@@ -15,7 +15,7 @@ def get_celery_broker_url() -> str:
 
 
 def get_celery_result_backend() -> str:
-    """Return the Redis URL Celery uses for task state/results."""
+    """Return the Redis URL Celery uses for internal task result metadata."""
     return os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1")
 
 

@@ -197,8 +197,8 @@ def serialize_care_plan(care_plan: CarePlan) -> CarePlanRead:
 def generate_care_plan(data: CarePlanGenerateRequest, db: Session = Depends(get_db)):
     """Directly generate and persist a CarePlan for an existing Order.
 
-    The primary order-submission path is POST /orders -> Celery. This endpoint
-    remains available as a manual synchronous generation path for a known Order.
+    This compatibility path is superseded by the Celery-based async Order
+    workflow used by POST /orders.
     """
     order = order_repository.get_order(db, data.order_id)
     if not order:
