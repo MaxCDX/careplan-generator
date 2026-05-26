@@ -6,23 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.care_plans import repository as care_plan_repository
 from app.care_plans.schemas import CarePlanGenerateRequest, CarePlanRead
+from app.care_plans.serializers import serialize_care_plan
 from app.care_plans.service import generate_care_plan_content
 from app.database import get_db
-from app.care_plans.models import CarePlan
 from app.orders import repository as order_repository
 
 router = APIRouter(prefix="/care-plans", tags=["care-plans"])
-
-
-def serialize_care_plan(care_plan: CarePlan) -> CarePlanRead:
-    """Convert a CarePlan SQLAlchemy model into the public API response."""
-    return CarePlanRead(
-        id=care_plan.id,
-        order_id=care_plan.order_id,
-        model=care_plan.model,
-        care_plan=care_plan.care_plan_content,
-        created_at=care_plan.created_at,
-    )
 
 
 @router.post("", response_model=CarePlanRead)
