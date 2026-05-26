@@ -4,7 +4,7 @@ import logging
 import os
 
 from app.care_plans import repository as care_plan_repository
-from app.care_plans.routes import generate_care_plan_content
+from app.care_plans.service import generate_care_plan_content
 from app.celery_app import celery_app
 from app.database import SessionLocal
 from app.orders.models import Order
