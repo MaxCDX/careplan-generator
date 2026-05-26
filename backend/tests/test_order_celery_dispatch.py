@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.database import get_db
 from app.main import app
 from app.orders import repository
+from app.orders import service
 
 
 def make_order(status="queued"):
@@ -64,7 +65,7 @@ def test_create_order_dispatches_celery_task_and_returns_accepted(monkeypatch):
 
     app.dependency_overrides[get_db] = lambda: object()
     monkeypatch.setattr(repository, "create_order", fake_create_order)
-    monkeypatch.setattr("app.orders.routes.generate_care_plan_task", FakeGenerateCarePlanTask)
+    monkeypatch.setattr(service, "generate_care_plan_task", FakeGenerateCarePlanTask)
 
     try:
         response = TestClient(app).post("/orders", json=order_payload())
@@ -98,7 +99,7 @@ def test_create_order_marks_order_failed_when_celery_dispatch_fails(monkeypatch)
     app.dependency_overrides[get_db] = lambda: object()
     monkeypatch.setattr(repository, "create_order", fake_create_order)
     monkeypatch.setattr(repository, "mark_order_failed", fake_mark_failed)
-    monkeypatch.setattr("app.orders.routes.generate_care_plan_task", FakeGenerateCarePlanTask)
+    monkeypatch.setattr(service, "generate_care_plan_task", FakeGenerateCarePlanTask)
 
     try:
         response = TestClient(app).post("/orders", json=order_payload())
