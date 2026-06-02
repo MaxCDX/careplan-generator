@@ -348,6 +348,28 @@ docker compose run --rm --no-deps -e DATABASE_URL=sqlite:///:memory: backend sh 
 
 ---
 
+## Continuous Integration
+
+GitHub Actions runs the backend pytest suite on every push to `main` and every
+pull request targeting `main`.
+
+The workflow lives at `.github/workflows/backend-ci.yml`. It starts a PostgreSQL
+service container, installs dependencies from `backend/requirements.txt`, and
+runs:
+
+```bash
+PYTHONPATH=. pytest tests
+```
+
+To require this before merging, enable branch protection in GitHub:
+
+1. Go to `Settings` -> `Branches`.
+2. Add or edit a branch protection rule for `main`.
+3. Enable `Require status checks to pass before merging`.
+4. Select the `Backend pytest` check.
+
+---
+
 ## Inspect the Database
 
 TablePlus connection:
