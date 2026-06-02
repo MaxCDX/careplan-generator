@@ -1,6 +1,6 @@
 # Care Plan Generator
 
-> Current Status: Day 6 — Polling-based Async Workflow Visibility MVP
+> Current Status: Day 7 — Refactored Polling-based Async Workflow MVP
 
 Care Plan Generator is a healthcare workflow system for specialty pharmacy staff. It lets an operator submit patient, provider, medication, diagnosis, and clinical-note information, then generates a pharmacist-review care plan draft using an LLM.
 
@@ -10,7 +10,7 @@ This project is not just a GPT wrapper. The main engineering focus is workflow c
 
 ## What It Does Now
 
-The current MVP supports a database-backed workflow:
+The current MVP supports a database-backed async workflow:
 
 ```text
 Frontend form
@@ -109,7 +109,7 @@ Technology responsibilities:
 - Redis acts as the Celery message broker
 - Celery workers process long-running background LLM jobs
 
-Current Day 6 polling-based async flow:
+Current Day 7 refactored async workflow:
 
 ```text
 1. Next.js frontend submits form
@@ -186,21 +186,79 @@ Order    1 → zero or one CarePlan
 careplan-generator/
 ├── backend/
 │   └── app/
-│       ├── main.py              # FastAPI app setup and router registration
-│       ├── database.py          # SQLAlchemy engine/session/Base
-│       ├── models.py            # Patient, Provider, Order, CarePlan tables
-│       ├── celery_app.py        # Celery application configuration
-│       ├── tasks/               # Celery async task definitions
-│       ├── patients/            # patient schemas/repository aliases
-│       ├── providers/           # provider schemas/repository aliases
-│       ├── orders/              # async order workflow routes/schemas/repository
-│       └── care_plans/          # care plan generation + mock LLM support
+│       ├── main.py                  # FastAPI app setup and router registration
+│       ├── database.py              # SQLAlchemy engine/session/Base
+│       ├── models.py                # shared SQLAlchemy entities
+│       ├── celery_app.py            # Celery configuration and Redis broker setup
+│       │
+│       ├── tasks/
+│       │   └── care_plan_tasks.py   # Celery worker entrypoint and async workflow processing
+│       │
+│       ├── patients/
+│       │   ├── repository.py        # patient lookup/create by MRN
+│       │   ├── schemas.py           # patient DTOs
+│       │   └── models.py            # feature-level model alias
+│       │
+│       ├── providers/
+│       │   ├── repository.py        # provider lookup/create by NPI
+│       │   ├── schemas.py           # provider DTOs
+│       │   └── models.py            # feature-level model alias
+│       │
+│       ├── orders/
+│       │   ├── routes.py            # HTTP endpoints for order APIs
+│       │   ├── service.py           # order workflow orchestration + Celery dispatch
+│       │   ├── repository.py        # order database operations
+│       │   ├── serializers.py       # Order -> API response formatting
+│       │   ├── schemas.py           # request/response DTOs
+│       │   └── models.py            # feature-level model alias
+│       │
+│       └── care_plans/
+│           ├── routes.py            # HTTP endpoints for care plan APIs
+│           ├── service.py           # LLM provider selection and generation logic
+│           ├── prompts.py           # prompt construction
+│           ├── repository.py        # care plan database operations
+│           ├── serializers.py       # CarePlan -> API response formatting
+│           ├── schemas.py           # request/response DTOs
+│           └── models.py            # feature-level model alias
+│
 ├── frontend/
-│   └── app/page.tsx             # form UI and async queue submission flow
+│   ├── app/
+│   │   ├── page.tsx                 # top-level page orchestration and state ownership
+│   │   └── layout.tsx               # root layout and metadata
+│   │
+│   ├── components/
+│   │   ├── OrderForm.tsx            # presentational order submission form
+│   │   ├── OrderStatus.tsx          # status/error/result state display
+│   │   └── CarePlanResult.tsx       # generated care plan rendering
+│   │
+│   ├── hooks/
+│   │   └── useOrderPolling.ts       # polling lifecycle, timeout, cleanup logic
+│   │
+│   ├── lib/
+│   │   └── api.ts                   # centralized frontend API calls
+│   │
+│   └── types/
+│       └── orders.ts                # shared frontend request/response types
+│
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
 ```
+
+### Backend Layer Responsibilities
+
+The backend follows a feature-based structure instead of a large global `controllers/`, `services/`, and `repositories/` layout.
+
+Within each feature:
+
+- `routes.py` owns HTTP request/response handling
+- `service.py` owns workflow orchestration and business logic
+- `repository.py` owns database access
+- `serializers.py` owns API response formatting
+- `schemas.py` owns Pydantic request/response DTOs
+- `models.py` exposes feature-local model aliases
+
+This structure keeps related code close together while still separating HTTP boundaries, business logic, and persistence concerns.
 
 ---
 
@@ -281,6 +339,34 @@ Open:
 Frontend: http://localhost:3000
 Backend:  http://localhost:8000
 ```
+
+Run backend tests in Docker:
+
+```bash
+docker compose run --rm --no-deps -e DATABASE_URL=sqlite:///:memory: backend sh -c "PYTHONPATH=. pytest tests"
+```
+
+---
+
+## Continuous Integration
+
+GitHub Actions runs the backend pytest suite on every push to `main` and every
+pull request targeting `main`.
+
+The workflow lives at `.github/workflows/backend-ci.yml`. It starts a PostgreSQL
+service container, installs dependencies from `backend/requirements.txt`, and
+runs:
+
+```bash
+PYTHONPATH=. pytest tests
+```
+
+To require this before merging, enable branch protection in GitHub:
+
+1. Go to `Settings` -> `Branches`.
+2. Add or edit a branch protection rule for `main`.
+3. Enable `Require status checks to pass before merging`.
+4. Select the `Backend pytest` check.
 
 ---
 

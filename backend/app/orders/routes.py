@@ -1,88 +1,52 @@
-import logging
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.orders.models import Order
+from app.exceptions import NotFoundError, ServiceUnavailableError
 from app.orders import repository
-from app.orders.schemas import OrderAccepted, OrderCreate, OrderRead, OrderStatusRead
-from app.patients.schemas import PatientRead
-from app.providers.schemas import ProviderRead
-from app.tasks.care_plan_tasks import generate_care_plan_task
+from app.orders import service
+from app.orders.serializers import serialize_order, serialize_order_status
+from app.orders.schemas import OrderAccepted, OrderCreate, OrderRead, OrderStatusRead, WarningResponse
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
-DISPATCH_FAILURE_MESSAGE = "Failed to enqueue care plan generation request."
 
-
-def serialize_order(order: Order) -> OrderRead:
-    """Convert a loaded Order SQLAlchemy model into the public API response."""
-    care_plan_content = (
-        order.care_plan.care_plan_content
-        if order.status == "completed" and order.care_plan is not None
-        else None
-    )
-
-    return OrderRead(
-        id=order.id,
-        patient=PatientRead(
-            id=order.patient.id,
-            name=order.patient.name,
-            mrn=order.patient.mrn,
-            dob=order.patient.dob,
-        ),
-        provider=ProviderRead(
-            id=order.provider.id,
-            name=order.provider.name,
-            npi=order.provider.npi,
-        ),
-        medication=order.medication,
-        diagnosis=order.diagnosis,
-        clinical_notes=order.clinical_notes,
-        status=order.status,
-        error_message=order.error_message,
-        has_care_plan=order.care_plan is not None,
-        care_plan_content=care_plan_content,
-        created_at=order.created_at,
-        updated_at=order.updated_at,
-    )
-
-
-def serialize_order_status(order: Order) -> OrderStatusRead:
-    """Convert an Order into the minimal Day 6 polling response."""
-    care_plan_content = (
-        order.care_plan.care_plan_content
-        if order.status == "completed" and order.care_plan is not None
-        else None
-    )
-
-    return OrderStatusRead(
-        id=order.id,
-        status=order.status,
-        error_message=order.error_message,
-        has_care_plan=order.care_plan is not None,
-        care_plan_content=care_plan_content,
-    )
-
-
-@router.post("", response_model=OrderAccepted, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "",
+    response_model=OrderAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        status.HTTP_200_OK: {
+            "model": WarningResponse,
+            "description": "Business warning requiring confirmation",
+        },
+        status.HTTP_400_BAD_REQUEST: {
+            "description": "Invalid request input",
+        },
+        status.HTTP_409_CONFLICT: {
+            "description": "Business conflict",
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "Queue unavailable",
+        },
+    },
+)
 def create_order(data: OrderCreate, db: Session = Depends(get_db)):
     """Create a queued Order and dispatch its id to the Celery worker."""
-    order = repository.create_order(db, data)
-
     try:
-        generate_care_plan_task.delay(order.id)
-    except Exception as exc:
-        logging.exception("Care plan Celery dispatch failed for order %s", order.id)
-        try:
-            repository.mark_order_failed(db, order.id, DISPATCH_FAILURE_MESSAGE)
-        except Exception:
-            logging.exception("Failed to persist Celery dispatch failure state for order %s", order.id)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Care plan request could not be queued. Please try again later.",
+        order = service.create_order_and_dispatch_care_plan(db, data)
+    except service.OrderDispatchError as exc:
+        raise ServiceUnavailableError(
+            code="CARE_PLAN_QUEUE_UNAVAILABLE",
+            message="Care plan request could not be queued. Please try again later.",
         ) from exc
+
+    if isinstance(order, WarningResponse):
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=order.model_dump(),
+        )
 
     return OrderAccepted(
         order_id=order.id,
@@ -102,7 +66,10 @@ def get_order_status(order_id: str, db: Session = Depends(get_db)):
     """Return minimal order workflow state for frontend polling."""
     order = repository.get_order(db, order_id)
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise NotFoundError(
+            code="ORDER_NOT_FOUND",
+            message="Order not found.",
+        )
     return serialize_order_status(order)
 
 
@@ -111,5 +78,8 @@ def get_order(order_id: str, db: Session = Depends(get_db)):
     """Return one persisted Order by id, including linked patient/provider data."""
     order = repository.get_order(db, order_id)
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
+        raise NotFoundError(
+            code="ORDER_NOT_FOUND",
+            message="Order not found.",
+        )
     return serialize_order(order)

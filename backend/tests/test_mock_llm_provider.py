@@ -17,13 +17,13 @@ def make_order():
 
 
 def test_mock_provider_returns_fixed_care_plan_without_openai_api_key(monkeypatch):
-    from app.care_plans import routes
+    from app.care_plans import service
 
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.setenv("MOCK_LLM_DELAY_SECS", "0")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    content = routes.generate_care_plan_content(make_order(), "test-model")
+    content = service.generate_care_plan_content(make_order(), "test-model")
 
     assert "Problem list:" in content
     assert "Goals:" in content
@@ -33,14 +33,14 @@ def test_mock_provider_returns_fixed_care_plan_without_openai_api_key(monkeypatc
 
 
 def test_mock_provider_uses_configured_delay(monkeypatch):
-    from app.care_plans import routes
+    from app.care_plans import service
 
     delays = []
 
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.setenv("MOCK_LLM_DELAY_SECS", "1.5")
-    monkeypatch.setattr(routes.time, "sleep", lambda delay: delays.append(delay))
+    monkeypatch.setattr(service.time, "sleep", lambda delay: delays.append(delay))
 
-    routes.generate_care_plan_content(make_order(), "test-model")
+    service.generate_care_plan_content(make_order(), "test-model")
 
     assert delays == [1.5]
