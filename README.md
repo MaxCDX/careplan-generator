@@ -1,6 +1,6 @@
 # Care Plan Generator
 
-> Current Status: Day 7 — Refactored Polling-based Async Workflow MVP
+> Current Status: Day 8 — Async Workflow MVP with Validation, Duplicate Detection, Warning Confirmation, Testing, and CI
 
 Care Plan Generator is a healthcare workflow system for specialty pharmacy staff. It lets an operator submit patient, provider, medication, diagnosis, and clinical-note information, then generates a pharmacist-review care plan draft using an LLM.
 
@@ -10,15 +10,45 @@ This project is not just a GPT wrapper. The main engineering focus is workflow c
 
 ## What It Does Now
 
-The current MVP supports a database-backed async workflow:
+The current MVP supports a database-backed async workflow with validation, duplicate detection, warning confirmation, and background care plan generation:
 
 ```text
 Frontend form
 → POST /orders
-→ create/reuse Patient and Provider
+→ validate request format
+→ run duplicate detection and business-rule checks
+→ create/reuse Patient and Provider if request is clean or confirmed
 → create Order(status="queued")
 → dispatch Celery task
 → return HTTP 202 Accepted immediately
+```
+
+Order submission can return four intentional outcomes:
+
+```text
+400 Bad Request
+→ request format is invalid, such as invalid NPI, MRN, DOB, or blank required fields
+
+409 Conflict
+→ business rule blocks the request, such as provider NPI conflict or same-day duplicate order
+
+200 OK with warning
+→ request may be valid but needs user confirmation, such as possible duplicate patient or different-day duplicate order
+
+202 Accepted
+→ request is accepted, Order is queued, and background generation starts
+```
+
+Warning confirmation flow:
+
+```text
+Backend returns warning
+→ frontend shows warning panel
+→ user can cancel and keep editing
+→ user can continue anyway
+→ frontend resubmits the same form with confirm=true
+→ backend creates the Order and dispatches Celery
+```
 
 Frontend starts polling GET /orders/{id}/status every 3 seconds.
 
@@ -54,7 +84,7 @@ Workflow state survives backend restarts because Orders are stored in PostgreSQL
 - Backend: FastAPI, Pydantic, SQLAlchemy, OpenAI SDK
 - Database: PostgreSQL
 - Async Processing: Celery, Redis
-- Infrastructure: Docker, Docker Compose
+- Infrastructure: Docker, Docker Compose, GitHub Actions CI
 
 ---
 
@@ -109,21 +139,24 @@ Technology responsibilities:
 - Redis acts as the Celery message broker
 - Celery workers process long-running background LLM jobs
 
-Current Day 7 refactored async workflow:
+Current Day 8 async workflow:
 
 ```text
 1. Next.js frontend submits form
 2. FastAPI backend creates/reuses Patient and Provider
 3. FastAPI backend creates Order(status="queued") in PostgreSQL
 4. FastAPI backend dispatches Celery task through Redis
-5. FastAPI backend immediately returns HTTP 202 Accepted
-6. Next.js frontend starts polling GET /orders/{id}/status every 3 seconds
-7. Celery worker consumes queued Redis task asynchronously
-8. Celery worker updates Order.status from queued → processing
-9. Celery worker generates CarePlan using mock or real LLM
-10. Celery worker stores CarePlan and updates Order.status → completed in PostgreSQL
-11. Next.js frontend polling detects completed status
-12. Next.js frontend displays generated result
+5. For invalid input, FastAPI returns a 400 validation error envelope
+6. For blocking business conflicts, FastAPI returns a 409 error envelope
+7. For confirmable warnings, FastAPI returns HTTP 200 with warning metadata
+8. FastAPI backend immediately returns HTTP 202 Accepted
+9. Next.js frontend starts polling GET /orders/{id}/status every 3 seconds
+10. Celery worker consumes queued Redis task asynchronously
+11. Celery worker updates Order.status from queued → processing
+12. Celery worker generates CarePlan using mock or real LLM
+13. Celery worker stores CarePlan and updates Order.status → completed in PostgreSQL
+14. Next.js frontend polling detects completed status
+15. Next.js frontend displays generated result
 ```
 
 ---
@@ -190,6 +223,7 @@ careplan-generator/
 │       ├── database.py              # SQLAlchemy engine/session/Base
 │       ├── models.py                # shared SQLAlchemy entities
 │       ├── celery_app.py            # Celery configuration and Redis broker setup
+│       ├── exceptions.py            # application exception types and error response metadata
 │       │
 │       ├── tasks/
 │       │   └── care_plan_tasks.py   # Celery worker entrypoint and async workflow processing
@@ -229,7 +263,7 @@ careplan-generator/
 │   ├── components/
 │   │   ├── OrderForm.tsx            # presentational order submission form
 │   │   ├── OrderStatus.tsx          # status/error/result state display
-│   │   └── CarePlanResult.tsx       # generated care plan rendering
+│   │   ├── CarePlanResult.tsx       # generated care plan rendering
 │   │
 │   ├── hooks/
 │   │   └── useOrderPolling.ts       # polling lifecycle, timeout, cleanup logic
@@ -257,6 +291,7 @@ Within each feature:
 - `serializers.py` owns API response formatting
 - `schemas.py` owns Pydantic request/response DTOs
 - `models.py` exposes feature-local model aliases
+- `exceptions.py` defines expected application errors that are converted into a consistent API error envelope
 
 This structure keeps related code close together while still separating HTTP boundaries, business logic, and persistence concerns.
 
@@ -271,13 +306,36 @@ Creates a durable async workflow request, dispatches a Celery background task, a
 ```json
 {
   "patient_name": "Example Patient",
-  "mrn": "MRN-EXAMPLE-001",
+  "patient_dob": "1980-01-01",
+  "mrn": "123456",
   "provider_name": "Dr. Example Provider",
   "provider_npi": "0000000000",
-  "diagnosis": "Example diagnosis for demo purposes only",
+  "diagnosis": "G70.00",
   "medication": "Example specialty medication",
-  "clinical_notes": "Fictional demo note. This example contains no real patient, provider, or clinical information."
+  "clinical_notes": "Fictional demo note. This example contains no real patient, provider, or clinical information.",
+  "confirm": false
 }
+```
+
+`confirm` is used only after the backend returns a warning. A clean first submission should use `false` or omit it.
+
+Possible `POST /orders` responses:
+
+```text
+202 Accepted
+→ Order created and queued for background generation
+
+200 OK
+→ warning response requiring user confirmation before Order creation
+
+400 Bad Request
+→ request validation failed
+
+409 Conflict
+→ business rule blocked the request
+
+503 Service Unavailable
+→ Order was created but the queue dispatch failed
 ```
 
 Current endpoints:
@@ -291,16 +349,75 @@ GET /orders/{order_id}/status
 
 ---
 
-## LLM Output Safety
+## Validation, Duplicate Detection, and Warnings
 
-The prompt generates a structured specialty pharmacy care plan draft and includes guardrails:
+The order submission flow performs checks before creating an Order or dispatching a Celery task.
 
-- output is for pharmacist review, not final medical advice
-- use only provided patient/provider/order information
-- do not fabricate missing clinical facts
-- use placeholders such as `[WEIGHT NOT PROVIDED]`, `[LAB VALUES NOT PROVIDED]`, and `[LICENSE NUMBER]`
+Validation checks happen in Pydantic schemas before business logic runs:
 
-Missing clinical data should stay visibly missing. A placeholder is safer than a plausible hallucination.
+```text
+provider_npi must be exactly 10 digits
+mrn must be exactly 6 digits
+patient_dob must use YYYY-MM-DD when provided
+required strings must not be blank
+```
+
+Duplicate detection and business checks happen in the order service layer:
+
+```text
+Provider: same NPI + different name
+→ blocked with 409 PROVIDER_NPI_CONFLICT
+
+Patient: same MRN + different name or DOB
+→ warning, user confirmation required
+
+Patient: same name + same DOB + different MRN
+→ warning, user confirmation required
+
+Order: same patient + same medication + same day
+→ blocked with 409 DUPLICATE_ORDER_SAME_DAY
+
+Order: same patient + same medication + different day
+→ warning unless confirm=true
+```
+
+Warnings do not create an Order and do not dispatch Celery. After reviewing the warning, the frontend can resubmit the same form with `confirm=true`.
+
+---
+
+## Error Handling
+
+Expected API errors use a consistent error envelope:
+
+```json
+{
+  "status": "error",
+  "code": "PROVIDER_NPI_CONFLICT",
+  "message": "Provider NPI already belongs to a different provider name.",
+  "detail": {}
+}
+```
+
+Current error categories:
+
+```text
+400 VALIDATION_ERROR
+→ request format is invalid
+
+409 PROVIDER_NPI_CONFLICT
+→ provider NPI already belongs to a different provider name
+
+409 DUPLICATE_ORDER_SAME_DAY
+→ duplicate order for the same patient and medication on the same day
+
+404 ORDER_NOT_FOUND
+→ requested order does not exist
+
+503 CARE_PLAN_QUEUE_UNAVAILABLE
+→ order could not be dispatched to the background worker
+```
+
+Warnings are intentionally not exceptions. They are normal business responses because the user can confirm and continue.
 
 ---
 
@@ -346,6 +463,15 @@ Run backend tests in Docker:
 docker compose run --rm --no-deps -e DATABASE_URL=sqlite:///:memory: backend sh -c "PYTHONPATH=. pytest tests"
 ```
 
+Run backend tests locally without Docker:
+
+```bash
+cd backend
+PYTHONPATH=. pytest tests
+```
+
+The backend test suite covers validation errors, patient/provider duplicate detection, warning responses, blocking conflicts, Celery dispatch behavior, and API integration paths.
+
 ---
 
 ## Continuous Integration
@@ -361,12 +487,7 @@ runs:
 PYTHONPATH=. pytest tests
 ```
 
-To require this before merging, enable branch protection in GitHub:
-
-1. Go to `Settings` -> `Branches`.
-2. Add or edit a branch protection rule for `main`.
-3. Enable `Require status checks to pass before merging`.
-4. Select the `Backend pytest` check.
+The CI job provisions a clean PostgreSQL service container for each run. Tests create their own data and do not depend on local development data.
 
 ---
 
@@ -421,18 +542,17 @@ The generated care plan is a pharmacist-review draft and not final medical advic
 Not implemented yet:
 
 - Alembic migrations
-- strict validation
-- duplicate detection
-- frontend currently uses polling instead of realtime push updates
-- no SSE / WebSocket realtime push infrastructure yet
-- no distributed worker autoscaling yet
-- no dead-letter queue (DLQ)
-- no rate limiting / backpressure handling
-- authentication
-- audit logging
-- PDF upload
-- production PHI handling
-- monitoring/deployment
+- SSE / WebSocket realtime push infrastructure
+- distributed worker autoscaling
+- dead-letter queue (DLQ)
+- rate limiting / backpressure handling
+- authentication and authorization
+- audit logging and access tracing
+- PDF upload and document extraction
+- production PHI hardening
+- monitoring and alerting
+- production deployment pipeline
+- frontend automated tests
 
 These are intentionally deferred so each future architecture layer solves a real pain point.
 
@@ -442,12 +562,17 @@ These are intentionally deferred so each future architecture layer solves a real
 
 ```text
 Frontend submits intent.
+Backend validates input before business logic.
+Backend blocks invalid business conflicts before workflow creation.
+Backend returns warnings for confirmable duplicate risks.
+Frontend can resubmit warning flows with confirm=true.
 Backend owns workflow state.
 PostgreSQL owns durable state.
 Redis acts as Celery broker.
 Celery workers process background jobs.
 Order owns lifecycle state.
 CarePlan owns generated output.
-Frontend polls workflow status every 3 seconds.
+Frontend polls workflow status every 3 seconds after accepted submissions.
 Frontend timeout does not automatically mean backend failure.
+GitHub Actions runs backend tests on pushes and pull requests.
 ```
