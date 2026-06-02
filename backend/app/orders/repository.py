@@ -12,7 +12,7 @@ def create_order(db: Session, data: OrderCreate) -> Order:
     Reuses existing Patient/Provider rows when MRN/NPI already exist.
     Returns the persisted Order with related Patient/Provider loaded.
     """
-    patient = get_or_create_patient(db, name=data.patient_name, mrn=data.mrn)
+    patient = get_or_create_patient(db, name=data.patient_name, mrn=data.mrn, dob=data.patient_dob)
     provider = get_or_create_provider(db, name=data.provider_name, npi=data.provider_npi)
 
     # Order owns workflow state; CarePlan is created only after generation succeeds.
@@ -27,6 +27,16 @@ def create_order(db: Session, data: OrderCreate) -> Order:
     db.add(order)
     db.commit()
     return get_order(db, order.id)  # type: ignore[return-value]
+
+
+def get_latest_order_for_patient_and_medication(db: Session, *, patient_id: str, medication: str) -> Order | None:
+    """Return newest Order for a patient and medication."""
+    return (
+        db.query(Order)
+        .filter(Order.patient_id == patient_id, Order.medication == medication)
+        .order_by(Order.created_at.desc())
+        .first()
+    )
 
 
 def mark_order_failed(db: Session, order_id: str, error_message: str) -> None:

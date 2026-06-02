@@ -8,10 +8,11 @@ import { OrderForm } from '../components/OrderForm'
 import { OrderStatus } from '../components/OrderStatus'
 import { useOrderPolling } from '../hooks/useOrderPolling'
 import { submitOrder } from '../lib/api'
-import type { FormData, QueuedOrder } from '../types/orders'
+import type { FormData, OrderSubmitResponse, QueuedOrder, WarningOrderResponse } from '../types/orders'
 
 const initialFormData: FormData = {
   patient_name: '',
+  patient_dob: '',
   mrn: '',
   provider_name: '',
   provider_npi: '',
@@ -23,6 +24,8 @@ const initialFormData: FormData = {
 export default function Home() {
   const [formData, setFormData] = useState<FormData>(initialFormData)
   const [queuedOrder, setQueuedOrder] = useState<QueuedOrder | null>(null)
+  const [warningResponse, setWarningResponse] = useState<WarningOrderResponse | null>(null)
+  const [pendingFormData, setPendingFormData] = useState<FormData | null>(null)
   const [orderId, setOrderId] = useState('')
   const [orderStatus, setOrderStatus] = useState('')
   const [carePlanContent, setCarePlanContent] = useState('')
@@ -46,11 +49,37 @@ export default function Home() {
     setFormData({ ...formData, [name]: value })
   }
 
+  function isWarningResponse(response: OrderSubmitResponse): response is WarningOrderResponse {
+    return response.status === 'warning'
+  }
+
+  function handleSubmitResponse(response: OrderSubmitResponse, submittedFormData: FormData) {
+    if (isWarningResponse(response)) {
+      setWarningResponse(response)
+      setPendingFormData(submittedFormData)
+      setQueuedOrder(null)
+      setOrderId('')
+      setOrderStatus('')
+      setCarePlanContent('')
+      setIsPolling(false)
+      setTimedOut(false)
+      return
+    }
+
+    setWarningResponse(null)
+    setPendingFormData(null)
+    setQueuedOrder(response)
+    setOrderId(response.order_id)
+    setOrderStatus(response.status)
+  }
+
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoading(true)
     setError('')
     setQueuedOrder(null)
+    setWarningResponse(null)
+    setPendingFormData(null)
     setOrderId('')
     setOrderStatus('')
     setCarePlanContent('')
@@ -60,14 +89,37 @@ export default function Home() {
     try {
       const orderData = await submitOrder(formData)
 
-      setQueuedOrder(orderData)
-      setOrderId(orderData.order_id)
-      setOrderStatus(orderData.status)
+      handleSubmitResponse(orderData, formData)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed.')
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleContinueAnyway() {
+    if (!pendingFormData) {
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const confirmedFormData = { ...pendingFormData, confirm: true }
+      const orderData = await submitOrder(confirmedFormData)
+
+      handleSubmitResponse(orderData, confirmedFormData)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Request failed.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleCancelWarning() {
+    setWarningResponse(null)
+    setPendingFormData(null)
   }
 
   return (
@@ -80,6 +132,27 @@ export default function Home() {
         onChange={handleFormChange}
         onSubmit={handleSubmit}
       />
+
+      {warningResponse && (
+        <section style={{ marginTop: 24, border: '1px solid #f0b429', background: '#fff8e6', padding: 16 }}>
+          <h2>Potential Duplicate Warning</h2>
+          <ul>
+            {warningResponse.warnings.map((warning) => (
+              <li key={warning.code}>
+                <strong>{warning.code}</strong>: {warning.message}
+              </li>
+            ))}
+          </ul>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" onClick={handleContinueAnyway} disabled={loading}>
+              {loading ? 'Submitting...' : 'Continue Anyway'}
+            </button>
+            <button type="button" onClick={handleCancelWarning} disabled={loading}>
+              Cancel
+            </button>
+          </div>
+        </section>
+      )}
 
       <OrderStatus
         error={error}

@@ -64,6 +64,9 @@ def test_create_order_dispatches_celery_task_and_returns_accepted(monkeypatch):
             dispatched_order_ids.append(order_id)
 
     app.dependency_overrides[get_db] = lambda: object()
+    monkeypatch.setattr(service.provider_repository, "get_provider_by_npi", lambda db, npi: None)
+    monkeypatch.setattr(service.patient_repository, "get_patient_by_mrn", lambda db, mrn: None)
+    monkeypatch.setattr(service.patient_repository, "get_patient_by_name_and_dob", lambda db, name, dob: None)
     monkeypatch.setattr(repository, "create_order", fake_create_order)
     monkeypatch.setattr(service, "generate_care_plan_task", FakeGenerateCarePlanTask)
 
@@ -97,6 +100,9 @@ def test_create_order_marks_order_failed_when_celery_dispatch_fails(monkeypatch)
             raise RuntimeError("celery unavailable")
 
     app.dependency_overrides[get_db] = lambda: object()
+    monkeypatch.setattr(service.provider_repository, "get_provider_by_npi", lambda db, npi: None)
+    monkeypatch.setattr(service.patient_repository, "get_patient_by_mrn", lambda db, mrn: None)
+    monkeypatch.setattr(service.patient_repository, "get_patient_by_name_and_dob", lambda db, name, dob: None)
     monkeypatch.setattr(repository, "create_order", fake_create_order)
     monkeypatch.setattr(repository, "mark_order_failed", fake_mark_failed)
     monkeypatch.setattr(service, "generate_care_plan_task", FakeGenerateCarePlanTask)
@@ -107,7 +113,12 @@ def test_create_order_marks_order_failed_when_celery_dispatch_fails(monkeypatch)
         app.dependency_overrides.clear()
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "Care plan request could not be queued. Please try again later."
+    assert response.json() == {
+        "status": "error",
+        "code": "CARE_PLAN_QUEUE_UNAVAILABLE",
+        "message": "Care plan request could not be queued. Please try again later.",
+        "detail": {},
+    }
     assert failed_orders == [("order-1", "Failed to enqueue care plan generation request.")]
 
 
@@ -143,7 +154,12 @@ def test_get_order_returns_404_for_missing_order(monkeypatch):
         app.dependency_overrides.clear()
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Order not found"
+    assert response.json() == {
+        "status": "error",
+        "code": "ORDER_NOT_FOUND",
+        "message": "Order not found.",
+        "detail": {},
+    }
 
 
 def test_get_order_status_returns_minimal_polling_payload(monkeypatch):
@@ -190,4 +206,25 @@ def test_get_order_status_returns_404_for_missing_order(monkeypatch):
         app.dependency_overrides.clear()
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Order not found"
+    assert response.json() == {
+        "status": "error",
+        "code": "ORDER_NOT_FOUND",
+        "message": "Order not found.",
+        "detail": {},
+    }
+
+
+def test_create_order_openapi_documents_warning_and_error_responses():
+    response = TestClient(app).get("/openapi.json")
+
+    assert response.status_code == 200
+    post_responses = response.json()["paths"]["/orders"]["post"]["responses"]
+
+    assert "200" in post_responses
+    assert post_responses["200"]["description"] == "Business warning requiring confirmation"
+    assert "400" in post_responses
+    assert post_responses["400"]["description"] == "Invalid request input"
+    assert "409" in post_responses
+    assert post_responses["409"]["description"] == "Business conflict"
+    assert "503" in post_responses
+    assert post_responses["503"]["description"] == "Queue unavailable"

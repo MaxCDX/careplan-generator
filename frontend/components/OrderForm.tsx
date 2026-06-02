@@ -9,8 +9,11 @@ type OrderFormProps = {
   onSubmit: (event: SyntheticEvent<HTMLFormElement>) => void
 }
 
-const fields: Array<{ name: keyof FormData; label: string; multiline?: boolean }> = [
+type FormFieldName = Exclude<keyof FormData, 'confirm'>
+
+const fields: Array<{ name: FormFieldName; label: string; multiline?: boolean; type?: string }> = [
   { name: 'patient_name', label: 'Patient name' },
+  { name: 'patient_dob', label: 'Patient date of birth', type: 'date' },
   { name: 'mrn', label: 'MRN' },
   { name: 'provider_name', label: 'Provider name' },
   { name: 'provider_npi', label: 'Provider NPI' },
@@ -33,6 +36,7 @@ export function OrderForm({ formData, loading, onChange, onSubmit }: OrderFormPr
             />
           ) : (
             <input
+              type={field.type || 'text'}
               value={formData[field.name]}
               onChange={(event) => onChange(field.name, event.target.value)}
             />

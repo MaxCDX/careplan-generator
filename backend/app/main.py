@@ -3,10 +3,14 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.care_plans.routes import router as care_plans_router
 from app.database import init_db
+from app.exceptions import BaseAppException
 from app.orders.routes import router as orders_router
 
 load_dotenv()
@@ -23,6 +27,34 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.exception_handler(BaseAppException)
+async def app_exception_handler(request, exc: BaseAppException):
+    """Return a consistent envelope for expected application errors."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "code": exc.code,
+            "message": exc.message,
+            "detail": exc.detail,
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request, exc):
+    """Return Bad Request for malformed client input in this learning project."""
+    return JSONResponse(
+        status_code=400,
+        content={
+            "status": "error",
+            "code": "VALIDATION_ERROR",
+            "message": "Invalid request input.",
+            "detail": jsonable_encoder(exc.errors()),
+        },
+    )
 
 # The browser app runs on port 3000 during local development and calls this API.
 app.add_middleware(

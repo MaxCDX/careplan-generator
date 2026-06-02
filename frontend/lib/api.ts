@@ -1,8 +1,8 @@
-import type { FormData, OrderStatusResponse, QueuedOrder } from '../types/orders'
+import type { ApiErrorResponse, FormData, OrderStatusResponse, OrderSubmitResponse } from '../types/orders'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
 
-export async function submitOrder(formData: FormData): Promise<QueuedOrder> {
+export async function submitOrder(formData: FormData): Promise<OrderSubmitResponse> {
   const orderResponse = await fetch(`${API_BASE_URL}/orders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -12,10 +12,11 @@ export async function submitOrder(formData: FormData): Promise<QueuedOrder> {
   const orderData = await orderResponse.json()
 
   if (!orderResponse.ok) {
-    throw new Error(orderData.detail || 'Order submission failed.')
+    const errorData = orderData as Partial<ApiErrorResponse>
+    throw new Error(errorData.message || 'Order submission failed.')
   }
 
-  return orderData
+  return orderData as OrderSubmitResponse
 }
 
 export async function getOrderStatus(orderId: string): Promise<OrderStatusResponse> {
