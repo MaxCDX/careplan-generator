@@ -7,3 +7,4 @@ SQLAlchemy
 psycopg2-binary
 redis
 celery[redis]
+pytest

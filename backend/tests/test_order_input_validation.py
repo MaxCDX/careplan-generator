@@ -88,6 +88,16 @@ def test_invalid_provider_npi_too_short_returns_400_without_order_or_dispatch(mo
         close_client(db)
 
 
+def test_invalid_provider_npi_too_long_returns_400_without_order_or_dispatch(monkeypatch):
+    client, db = make_client(monkeypatch)
+    try:
+        response = client.post("/orders", json=order_payload(provider_npi="12345678901"))
+
+        assert_invalid_request_does_not_create_order_or_dispatch(response, db)
+    finally:
+        close_client(db)
+
+
 def test_invalid_patient_mrn_letters_returns_400_without_order_or_dispatch(monkeypatch):
     client, db = make_client(monkeypatch)
     try:
@@ -108,10 +118,40 @@ def test_invalid_patient_mrn_too_short_returns_400_without_order_or_dispatch(mon
         close_client(db)
 
 
+def test_invalid_patient_mrn_too_long_returns_400_without_order_or_dispatch(monkeypatch):
+    client, db = make_client(monkeypatch)
+    try:
+        response = client.post("/orders", json=order_payload(mrn="1234567"))
+
+        assert_invalid_request_does_not_create_order_or_dispatch(response, db)
+    finally:
+        close_client(db)
+
+
 def test_whitespace_required_string_field_returns_400_without_order_or_dispatch(monkeypatch):
     client, db = make_client(monkeypatch)
     try:
         response = client.post("/orders", json=order_payload(patient_name="   "))
+
+        assert_invalid_request_does_not_create_order_or_dispatch(response, db)
+    finally:
+        close_client(db)
+
+
+def test_blank_provider_name_returns_400_without_order_or_dispatch(monkeypatch):
+    client, db = make_client(monkeypatch)
+    try:
+        response = client.post("/orders", json=order_payload(provider_name="   "))
+
+        assert_invalid_request_does_not_create_order_or_dispatch(response, db)
+    finally:
+        close_client(db)
+
+
+def test_blank_medication_returns_400_without_order_or_dispatch(monkeypatch):
+    client, db = make_client(monkeypatch)
+    try:
+        response = client.post("/orders", json=order_payload(medication="   "))
 
         assert_invalid_request_does_not_create_order_or_dispatch(response, db)
     finally:

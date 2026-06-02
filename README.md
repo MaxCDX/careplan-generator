@@ -340,6 +340,12 @@ Frontend: http://localhost:3000
 Backend:  http://localhost:8000
 ```
 
+Run backend tests in Docker:
+
+```bash
+docker compose run --rm --no-deps -e DATABASE_URL=sqlite:///:memory: backend sh -c "PYTHONPATH=. pytest tests"
+```
+
 ---
 
 ## Inspect the Database

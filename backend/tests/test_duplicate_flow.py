@@ -91,6 +91,36 @@ def create_order(db, *, patient, provider, medication="IVIG", created_at=None):
     return order
 
 
+def test_valid_clean_request_creates_order_and_dispatches_celery(monkeypatch):
+    client, db = make_client(monkeypatch)
+    try:
+        response = client.post("/orders", json=order_payload())
+
+        assert response.status_code == 202
+        assert response.json()["status"] == "queued"
+        assert response.json()["message"] == "Care plan generation request accepted"
+        assert db.query(Order).count() == 1
+        assert len(FakeGenerateCarePlanTask.dispatched_order_ids) == 1
+    finally:
+        close_client(db)
+
+
+def test_provider_same_npi_same_name_reuses_provider(monkeypatch):
+    client, db = make_client(monkeypatch)
+    try:
+        provider = create_provider(db)
+
+        response = client.post("/orders", json=order_payload())
+
+        assert response.status_code == 202
+        assert db.query(Provider).count() == 1
+        order = db.query(Order).one()
+        assert order.provider_id == provider.id
+        assert len(FakeGenerateCarePlanTask.dispatched_order_ids) == 1
+    finally:
+        close_client(db)
+
+
 def test_provider_same_npi_different_name_blocks_with_409(monkeypatch):
     client, db = make_client(monkeypatch)
     try:
@@ -107,6 +137,22 @@ def test_provider_same_npi_different_name_blocks_with_409(monkeypatch):
         }
         assert db.query(Order).count() == 0
         assert FakeGenerateCarePlanTask.dispatched_order_ids == []
+    finally:
+        close_client(db)
+
+
+def test_patient_same_mrn_same_identity_reuses_patient(monkeypatch):
+    client, db = make_client(monkeypatch)
+    try:
+        patient = create_patient(db)
+
+        response = client.post("/orders", json=order_payload())
+
+        assert response.status_code == 202
+        assert db.query(Patient).count() == 1
+        order = db.query(Order).one()
+        assert order.patient_id == patient.id
+        assert len(FakeGenerateCarePlanTask.dispatched_order_ids) == 1
     finally:
         close_client(db)
 

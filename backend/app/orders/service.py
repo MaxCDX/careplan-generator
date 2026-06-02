@@ -40,7 +40,7 @@ def create_order_and_dispatch_care_plan(db: Session, data: OrderCreate) -> Order
                     "message": "Patient MRN exists but name or DOB is different.",
                 }
             )
-    else:
+    elif data.patient_dob:
         same_identity_patient = patient_repository.get_patient_by_name_and_dob(
             db,
             name=data.patient_name,
@@ -75,6 +75,7 @@ def create_order_and_dispatch_care_plan(db: Session, data: OrderCreate) -> Order
             )
 
     if warnings and not data.confirm:
+        logging.warning("Order requires confirmation: warning_codes=%s", [warning["code"] for warning in warnings])
         return WarningResponse(warnings=warnings)
 
     order = repository.create_order(db, data)

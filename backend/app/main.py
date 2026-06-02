@@ -32,6 +32,8 @@ app = FastAPI(lifespan=lifespan)
 @app.exception_handler(BaseAppException)
 async def app_exception_handler(request, exc: BaseAppException):
     """Return a consistent envelope for expected application errors."""
+    log_func = logging.error if exc.status_code >= 500 else logging.warning
+    log_func("Application error handled: code=%s message=%s", exc.code, exc.message)
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -46,6 +48,7 @@ async def app_exception_handler(request, exc: BaseAppException):
 @app.exception_handler(RequestValidationError)
 async def request_validation_exception_handler(request, exc):
     """Return Bad Request for malformed client input in this learning project."""
+    logging.info("Request validation error handled: error_count=%s", len(exc.errors()))
     return JSONResponse(
         status_code=400,
         content={
