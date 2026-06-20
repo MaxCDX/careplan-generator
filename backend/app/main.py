@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from app.care_plans.routes import router as care_plans_router
 from app.database import init_db
 from app.exceptions import BaseAppException
+from app.external_orders.routes import router as external_orders_router
 from app.orders.routes import router as orders_router
 
 load_dotenv()
@@ -72,3 +73,4 @@ app.add_middleware(
 # Keep main.py focused on application wiring; domain endpoints live in routers.
 app.include_router(orders_router)
 app.include_router(care_plans_router)
+app.include_router(external_orders_router)
