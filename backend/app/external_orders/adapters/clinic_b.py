@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
+from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
 from app.orders.schemas import OrderCreate
 
 
@@ -29,7 +30,7 @@ class ClinicBAdapter(BaseIntakeAdapter):
             patient.get("mi", ""),
             patient.get("lname", ""),
         ]
-        patient_name = " ".join(part.strip() for part in name_parts if part and part.strip())
+        patient_name = join_nonblank_parts(name_parts)
         patient_mrn = patient.get("mrn", "")
         patient_dob = parse_clinic_b_dob(patient.get("dob"))
         provider_name = provider.get("name", "")
@@ -44,16 +45,13 @@ class ClinicBAdapter(BaseIntakeAdapter):
             clinical_note_parts.append(str(original_notes).strip())
 
         source_system = order_info.get("src", "")
-        if source_system:
-            clinical_note_parts.append(f"Source system: {source_system}")
+        append_note_if_present(clinical_note_parts, "Source system", source_system)
 
         source_created_time = order_info.get("created", "")
-        if source_created_time:
-            clinical_note_parts.append(f"Source created time: {source_created_time}")
+        append_note_if_present(clinical_note_parts, "Source created time", source_created_time)
 
         gender = patient.get("gender", "")
-        if gender:
-            clinical_note_parts.append(f"Gender: {gender}")
+        append_note_if_present(clinical_note_parts, "Gender", gender)
 
         weight = patient.get("wt")
         weight_unit = patient.get("wt_unit", "")
@@ -75,8 +73,7 @@ class ClinicBAdapter(BaseIntakeAdapter):
             clinical_note_parts.append(f"Secondary diagnoses: {', '.join(str(item) for item in secondary_diagnoses)}")
 
         ndc = prescription.get("ndc", "")
-        if ndc:
-            clinical_note_parts.append(f"NDC: {ndc}")
+        append_note_if_present(clinical_note_parts, "NDC", ndc)
 
         dosage = prescription.get("dosage", "")
         frequency = prescription.get("freq", "")
@@ -84,7 +81,7 @@ class ClinicBAdapter(BaseIntakeAdapter):
         if dosage_frequency_parts:
             clinical_note_parts.append(f"Dosage/frequency: {'; '.join(dosage_frequency_parts)}")
 
-        clinical_notes = "\n".join(part for part in clinical_note_parts if part)
+        clinical_notes = build_clinical_notes(clinical_note_parts)
 
         return OrderCreate(
             patient_name=patient_name,

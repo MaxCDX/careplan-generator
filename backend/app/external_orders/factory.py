@@ -1,5 +1,7 @@
 from app.external_orders.adapters.base import BaseIntakeAdapter
 from app.external_orders.adapters.clinic_b import ClinicBAdapter
+from app.external_orders.adapters.enterprise_spreadsheet import EnterpriseSpreadsheetAdapter
+from app.external_orders.adapters.healthfirst import HealthFirstAdapter
 from app.external_orders.adapters.pharmacorp import PharmaCorpAdapter
 
 
@@ -13,5 +15,10 @@ def get_external_order_adapter(source: str) -> BaseIntakeAdapter:
     if normalized_source == "pharmacorp":
         return PharmaCorpAdapter()
 
-    raise ValueError(f"Unsupported external order source: {source}")
+    if normalized_source == "healthfirst":
+        return HealthFirstAdapter()
 
+    if normalized_source == "enterprise_spreadsheet":
+        return EnterpriseSpreadsheetAdapter()
+
+    raise ValueError(f"Unsupported external order source: {source}")

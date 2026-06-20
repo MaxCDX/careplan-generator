@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from openpyxl import Workbook
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
@@ -113,13 +114,79 @@ def pharmacorp_payload():
     }
 
 
+def healthfirst_payload():
+    return {
+        "row": (
+            "ORDER_DATE,FACILITY,PATIENT_NO,LAST_NAME,FIRST_NAME,DOB,NPI,PROVIDER,"
+            "ICD10_PRIMARY,ICD10_SECONDARY,MEDICATION,DOSAGE,FREQUENCY,NDC,ALLERGIES,"
+            "CURRENT_MEDS,WEIGHT_KG,NOTES\n"
+            '2025-01-18,HF_WEST,567890,Garcia,Maria,1988-06-15,2233445566,'
+            'Dr. David Kim,G35,"I10;E11.9",Ocrevus,600mg,Every 6 Months,'
+            '50242-150-01,"Latex;Peanuts","Vitamin D;Baclofen",72,'
+            '"Recent MRI demonstrates active lesions."'
+        )
+    }
+
+
+def enterprise_spreadsheet_payload(tmp_path):
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(
+        [
+            "Patient ID",
+            "First Name",
+            "Last Name",
+            "Date of Birth",
+            "Provider",
+            "Provider NPI",
+            "Primary Diagnosis",
+            "Secondary Diagnoses",
+            "Medication",
+            "Dose",
+            "Frequency",
+            "NDC",
+            "Allergies",
+            "Current Medications",
+            "Weight",
+            "Notes",
+        ]
+    )
+    worksheet.append(
+        [
+            "678901",
+            "Lena",
+            "Patel",
+            "1990-04-12",
+            "Dr. Anita Rao",
+            "3344556677",
+            "M06.9",
+            "I10;E78.5",
+            "Humira",
+            "40mg",
+            "Every Other Week",
+            "0074-4339-02",
+            "Shellfish;Latex",
+            "Methotrexate;Folic acid",
+            68,
+            "Persistent joint swelling despite current therapy.",
+        ]
+    )
+    file_path = tmp_path / "enterprise_order.xlsx"
+    workbook.save(file_path)
+    return {"file_path": str(file_path)}
+
+
 def test_factory_returns_expected_adapter_types():
     from app.external_orders.adapters.clinic_b import ClinicBAdapter
+    from app.external_orders.adapters.enterprise_spreadsheet import EnterpriseSpreadsheetAdapter
+    from app.external_orders.adapters.healthfirst import HealthFirstAdapter
     from app.external_orders.adapters.pharmacorp import PharmaCorpAdapter
     from app.external_orders.factory import get_external_order_adapter
 
     assert isinstance(get_external_order_adapter(" clinic_b "), ClinicBAdapter)
     assert isinstance(get_external_order_adapter("PHARMACORP"), PharmaCorpAdapter)
+    assert isinstance(get_external_order_adapter("healthfirst"), HealthFirstAdapter)
+    assert isinstance(get_external_order_adapter("enterprise_spreadsheet"), EnterpriseSpreadsheetAdapter)
 
 
 def test_factory_rejects_unsupported_source():
@@ -143,6 +210,22 @@ def test_pharmacorp_parse_returns_xml_root_element():
     root = PharmaCorpAdapter().parse(pharmacorp_payload())
 
     assert root.tag == "CareOrderRequest"
+
+
+def test_healthfirst_parse_returns_csv_row_dict():
+    from app.external_orders.adapters.healthfirst import HealthFirstAdapter
+
+    parsed = HealthFirstAdapter().parse(healthfirst_payload())
+
+    assert parsed["PATIENT_NO"] == "567890"
+
+
+def test_enterprise_spreadsheet_parse_returns_row_dict(tmp_path):
+    from app.external_orders.adapters.enterprise_spreadsheet import EnterpriseSpreadsheetAdapter
+
+    parsed = EnterpriseSpreadsheetAdapter().parse(enterprise_spreadsheet_payload(tmp_path))
+
+    assert parsed["Patient ID"] == "678901"
 
 
 def test_clinic_b_adapter_returns_expected_order_create_fields():
@@ -176,3 +259,36 @@ def test_pharmacorp_adapter_returns_expected_order_create_fields():
     assert "Secondary diagnoses:" in order.clinical_notes
     assert "- I10 - Essential hypertension" in order.clinical_notes
     assert "Dose/frequency: 44 grams; Once daily" in order.clinical_notes
+
+
+def test_healthfirst_adapter_returns_expected_order_create_fields():
+    from app.external_orders.adapters.healthfirst import HealthFirstAdapter
+
+    order = HealthFirstAdapter().normalize(healthfirst_payload())
+
+    assert order.patient_name == "Maria Garcia"
+    assert order.mrn == "567890"
+    assert order.patient_dob == "1988-06-15"
+    assert order.provider_npi == "2233445566"
+    assert order.diagnosis == "G35"
+    assert order.medication == "Ocrevus"
+    assert "I10" in order.clinical_notes
+    assert "Latex" in order.clinical_notes
+    assert "Vitamin D" in order.clinical_notes
+
+
+def test_enterprise_spreadsheet_adapter_returns_expected_order_create_fields(tmp_path):
+    from app.external_orders.adapters.enterprise_spreadsheet import EnterpriseSpreadsheetAdapter
+
+    order = EnterpriseSpreadsheetAdapter().normalize(enterprise_spreadsheet_payload(tmp_path))
+
+    assert order.patient_name == "Lena Patel"
+    assert order.mrn == "678901"
+    assert order.patient_dob == "1990-04-12"
+    assert order.provider_npi == "3344556677"
+    assert order.diagnosis == "M06.9"
+    assert order.medication == "Humira"
+    assert "I10" in order.clinical_notes
+    assert "Shellfish" in order.clinical_notes
+    assert "Methotrexate" in order.clinical_notes
+    assert "Dose/frequency: 40mg; Every Other Week" in order.clinical_notes

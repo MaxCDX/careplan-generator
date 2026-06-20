@@ -2,6 +2,7 @@ from xml.etree import ElementTree
 from xml.etree.ElementTree import Element
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
+from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
 from app.orders.schemas import OrderCreate
 
 
@@ -28,7 +29,7 @@ class PharmaCorpAdapter(BaseIntakeAdapter):
             root.findtext("./PatientInformation/PatientName/MiddleName", default=""),
             require_xml_text(root, "./PatientInformation/PatientName/LastName"),
         ]
-        patient_name = " ".join(part.strip() for part in name_parts if part and part.strip())
+        patient_name = join_nonblank_parts(name_parts)
         mrn = require_xml_text(root, "./PatientInformation/MedicalRecordNumber")
         patient_dob = require_xml_text(root, "./PatientInformation/DateOfBirth")
         provider_name = require_xml_text(root, "./PrescriberInformation/FullName")
@@ -43,20 +44,16 @@ class PharmaCorpAdapter(BaseIntakeAdapter):
             clinical_note_parts.append(narrative_text)
 
         source_system = root.findtext("./RequestMetadata/SourceSystem", default="").strip()
-        if source_system:
-            clinical_note_parts.append(f"Source system: {source_system}")
+        append_note_if_present(clinical_note_parts, "Source system", source_system)
 
         request_id = root.findtext("./RequestMetadata/RequestId", default="").strip()
-        if request_id:
-            clinical_note_parts.append(f"Request ID: {request_id}")
+        append_note_if_present(clinical_note_parts, "Request ID", request_id)
 
         request_timestamp = root.findtext("./RequestMetadata/RequestTimestamp", default="").strip()
-        if request_timestamp:
-            clinical_note_parts.append(f"Request timestamp: {request_timestamp}")
+        append_note_if_present(clinical_note_parts, "Request timestamp", request_timestamp)
 
         gender = root.findtext("./PatientInformation/Gender", default="").strip()
-        if gender:
-            clinical_note_parts.append(f"Gender: {gender}")
+        append_note_if_present(clinical_note_parts, "Gender", gender)
 
         weight_value = root.findtext("./PatientInformation/BodyWeight/Value", default="").strip()
         weight_unit = root.findtext("./PatientInformation/BodyWeight/Unit", default="").strip()
@@ -65,8 +62,7 @@ class PharmaCorpAdapter(BaseIntakeAdapter):
             clinical_note_parts.append(f"Weight: {' '.join(weight_parts)}")
 
         facility = root.findtext("./PrescriberInformation/Facility", default="").strip()
-        if facility:
-            clinical_note_parts.append(f"Facility: {facility}")
+        append_note_if_present(clinical_note_parts, "Facility", facility)
 
         primary_diagnosis_description = root.findtext(
             "./DiagnosisList/PrimaryDiagnosis/Description",
@@ -88,8 +84,7 @@ class PharmaCorpAdapter(BaseIntakeAdapter):
                 clinical_note_parts.append(f"- {secondary_diagnosis_part}")
 
         ndc = root.findtext("./MedicationOrder/NDCCode", default="").strip()
-        if ndc:
-            clinical_note_parts.append(f"NDC: {ndc}")
+        append_note_if_present(clinical_note_parts, "NDC", ndc)
 
         dose_amount = root.findtext("./MedicationOrder/OrderedDose/Amount", default="").strip()
         dose_unit = root.findtext("./MedicationOrder/OrderedDose/Unit", default="").strip()
@@ -143,7 +138,7 @@ class PharmaCorpAdapter(BaseIntakeAdapter):
         if document_metadata_parts:
             clinical_note_parts.append(f"Clinical document metadata: {', '.join(document_metadata_parts)}")
 
-        clinical_notes = "\n".join(part for part in clinical_note_parts if part)
+        clinical_notes = build_clinical_notes(clinical_note_parts)
 
         return OrderCreate(
             patient_name=patient_name,
