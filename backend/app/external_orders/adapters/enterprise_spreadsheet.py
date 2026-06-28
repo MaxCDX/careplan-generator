@@ -1,9 +1,12 @@
 from datetime import date, datetime
+from zipfile import BadZipFile
 
 from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
 from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
+from app.external_orders.errors import ExternalOrderInputError
 from app.orders.schemas import OrderCreate
 
 
@@ -14,23 +17,26 @@ class EnterpriseSpreadsheetAdapter(BaseIntakeAdapter):
         """Parse the first worksheet's header row and first data row into a dict."""
         file_path = payload.get("file_path")
         if not file_path:
-            raise ValueError("Enterprise spreadsheet payload must include file_path.")
+            raise ExternalOrderInputError("Enterprise spreadsheet payload must include file_path.")
 
-        workbook = load_workbook(file_path, data_only=True)
+        try:
+            workbook = load_workbook(file_path, data_only=True)
+        except (OSError, InvalidFileException, BadZipFile) as exc:
+            raise ExternalOrderInputError("Invalid enterprise spreadsheet payload.") from exc
         worksheet = workbook.worksheets[0]
 
         rows = worksheet.iter_rows(values_only=True)
         headers = next(rows, None)
         if not headers or not any(headers):
-            raise ValueError("Enterprise spreadsheet must include headers.")
+            raise ExternalOrderInputError("Enterprise spreadsheet must include headers.")
 
         data_row = next(rows, None)
         if not data_row:
-            raise ValueError("Enterprise spreadsheet must include one data row.")
+            raise ExternalOrderInputError("Enterprise spreadsheet must include one data row.")
 
         cleaned_headers = [str(header).strip() if header is not None else "" for header in headers]
         if not any(cleaned_headers):
-            raise ValueError("Enterprise spreadsheet must include headers.")
+            raise ExternalOrderInputError("Enterprise spreadsheet must include headers.")
 
         return dict(zip(cleaned_headers, data_row))
 

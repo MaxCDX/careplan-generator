@@ -3,6 +3,7 @@ from xml.etree.ElementTree import Element
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
 from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
+from app.external_orders.errors import ExternalOrderInputError
 from app.orders.schemas import OrderCreate
 
 
@@ -12,7 +13,10 @@ class PharmaCorpAdapter(BaseIntakeAdapter):
     def parse(self, payload: dict):
         """Parse PharmaCorp's XML payload into an ElementTree root."""
         raw_xml = payload.get("xml", "")
-        return ElementTree.fromstring(raw_xml)
+        try:
+            return ElementTree.fromstring(raw_xml)
+        except ElementTree.ParseError as exc:
+            raise ExternalOrderInputError("Invalid PharmaCorp XML payload.") from exc
 
     def transform(self, root) -> OrderCreate:
         """Transform a parsed PharmaCorp XML root into OrderCreate.
@@ -156,6 +160,6 @@ def require_xml_text(root: Element, path: str) -> str:
     """Return required XML text for a simple ElementTree path."""
     element = root.find(path)
     if element is None or element.text is None or not element.text.strip():
-        raise ValueError(f"Missing required XML field: {path}")
+        raise ExternalOrderInputError(f"Missing required XML field: {path}")
 
     return element.text.strip()

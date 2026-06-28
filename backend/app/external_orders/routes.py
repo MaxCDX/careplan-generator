@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Body, Depends, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -5,11 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.exceptions import BadRequestError, ServiceUnavailableError
+from app.external_orders.errors import ExternalOrderInputError
 from app.external_orders.service import normalize_external_order
 from app.orders import service as order_service
 from app.orders.schemas import OrderAccepted, WarningResponse
 
 router = APIRouter(prefix="/external-orders", tags=["external-orders"])
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -40,11 +44,16 @@ def create_external_order(
     """Normalize an external order, then reuse the existing Order workflow."""
     try:
         normalized_order = normalize_external_order(source, payload)
-    except (ValueError, ValidationError) as exc:
+    except (ExternalOrderInputError, ValidationError) as exc:
+        logger.warning(
+            "External order input rejected: source=%s error_type=%s",
+            source,
+            type(exc).__name__,
+        )
         raise BadRequestError(
             code="INVALID_EXTERNAL_ORDER",
             message="Invalid external order input.",
-            detail={"error": str(exc)},
+            detail={},
         ) from exc
 
     try:

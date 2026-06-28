@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.care_plans import routes as care_plan_routes
 from app.database import get_db
 from app.external_orders import routes as external_order_routes
+from app.external_orders.errors import ExternalOrderInputError
 from app.main import app
 
 
@@ -20,7 +21,7 @@ def request_with_db(method: str, path: str, db, **kwargs):
 
 def test_external_order_normalization_failure_uses_app_error_envelope(monkeypatch):
     def fail_normalization(source, payload):
-        raise ValueError("unsupported payload")
+        raise ExternalOrderInputError("unsupported payload")
 
     monkeypatch.setattr(
         external_order_routes,
@@ -35,7 +36,7 @@ def test_external_order_normalization_failure_uses_app_error_envelope(monkeypatc
         "status": "error",
         "code": "INVALID_EXTERNAL_ORDER",
         "message": "Invalid external order input.",
-        "detail": {"error": "unsupported payload"},
+        "detail": {},
     }
 
 

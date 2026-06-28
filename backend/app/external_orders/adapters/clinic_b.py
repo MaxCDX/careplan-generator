@@ -2,6 +2,7 @@ from datetime import datetime
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
 from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
+from app.external_orders.errors import ExternalOrderInputError
 from app.orders.schemas import OrderCreate
 
 
@@ -111,4 +112,4 @@ def parse_clinic_b_dob(value):
             except ValueError:
                 pass
 
-    raise ValueError("Clinic B DOB must be an MM/DD/YYYY or YYYY-MM-DD string for this starter exercise.")
+    raise ExternalOrderInputError("Clinic B DOB must be an MM/DD/YYYY or YYYY-MM-DD string for this starter exercise.")

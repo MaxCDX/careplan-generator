@@ -3,6 +3,7 @@ from io import StringIO
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
 from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
+from app.external_orders.errors import ExternalOrderInputError
 from app.orders.schemas import OrderCreate
 
 
@@ -13,12 +14,12 @@ class HealthFirstAdapter(BaseIntakeAdapter):
         """Parse one CSV row wrapped in a JSON payload into a dict."""
         raw_row = payload.get("row")
         if not raw_row:
-            raise ValueError("HealthFirst payload must include row.")
+            raise ExternalOrderInputError("HealthFirst payload must include row.")
 
         reader = csv.DictReader(StringIO(raw_row))
         parsed = next(reader, None)
         if not parsed:
-            raise ValueError("HealthFirst payload must include one data row.")
+            raise ExternalOrderInputError("HealthFirst payload must include one data row.")
 
         return parsed
 

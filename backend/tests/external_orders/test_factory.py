@@ -19,7 +19,8 @@ def test_factory_returns_expected_adapter_types():
 
 
 def test_factory_rejects_unsupported_source():
+    from app.external_orders.errors import ExternalOrderInputError
     from app.external_orders.factory import get_external_order_adapter
 
-    with pytest.raises(ValueError, match="Unsupported external order source: unknown"):
+    with pytest.raises(ExternalOrderInputError, match="Unsupported external order source: unknown"):
         get_external_order_adapter("unknown")
