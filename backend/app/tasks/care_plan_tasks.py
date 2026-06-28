@@ -7,6 +7,7 @@ from app.care_plans import repository as care_plan_repository
 from app.care_plans.service import generate_care_plan_content
 from app.celery_app import celery_app
 from app.database import SessionLocal
+from app.llm.errors import LLMConfigurationError
 from app.orders.models import Order
 
 logger = logging.getLogger(__name__)
@@ -15,9 +16,13 @@ WORKER_FAILURE_MESSAGE = "Care plan generation failed. Please try again later."
 MAX_RETRIES = 3
 
 
-def get_openai_model() -> str:
-    """Return the model name used for worker-side care plan generation."""
-    return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+def get_llm_model() -> str:
+    """Return the configured model, with legacy OpenAI fallback support."""
+    return (
+        os.getenv("LLM_MODEL")
+        or os.getenv("OPENAI_MODEL")
+        or "gpt-4o-mini"
+    )
 
 
 def get_retry_countdown(retry_count: int) -> int:
@@ -55,7 +60,7 @@ def process_order_for_celery(task_self, order_id: str) -> dict[str, str]:
             logger.info("Order %s moved to processing", order_id)
 
         try:
-            model = get_openai_model()
+            model = get_llm_model()
             logger.info(
                 "Starting care plan generation for order %s, retry %s/%s",
                 order_id,
@@ -76,6 +81,14 @@ def process_order_for_celery(task_self, order_id: str) -> dict[str, str]:
             db.commit()
             logger.info("Completed care plan generation for order %s", order_id)
             return {"status": "completed", "order_id": order_id}
+        except LLMConfigurationError:
+            db.rollback()
+            logger.exception("Care plan generation configuration error for order %s", order_id)
+            order.status = "failed"
+            order.error_message = WORKER_FAILURE_MESSAGE
+            db.add(order)
+            db.commit()
+            raise
         except Exception as exc:
             db.rollback()
             if task_self.request.retries < MAX_RETRIES:

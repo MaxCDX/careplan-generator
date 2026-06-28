@@ -31,6 +31,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/careplan_test
       LLM_PROVIDER: mock
+      LLM_MODEL: mock-model
       MOCK_LLM_DELAY_SECS: "0"
 
     steps:

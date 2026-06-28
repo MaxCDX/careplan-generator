@@ -33,9 +33,10 @@ def test_factory_returns_claude_service_when_provider_is_claude(monkeypatch):
 
 
 def test_factory_rejects_unsupported_provider(monkeypatch):
+    from app.llm.errors import LLMConfigurationError
     from app.llm.factory import get_llm_service
 
     monkeypatch.setenv("LLM_PROVIDER", "unsupported")
 
-    with pytest.raises(ValueError, match="Unsupported LLM provider: unsupported"):
+    with pytest.raises(LLMConfigurationError, match="Unsupported LLM provider: unsupported"):
         get_llm_service()

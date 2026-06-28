@@ -2,6 +2,7 @@ import os
 import time
 
 from app.llm.base import BaseLLMService
+from app.llm.errors import LLMConfigurationError
 
 MOCK_CARE_PLAN_CONTENT = """Problem list:
 - Mock problem list for local care plan testing.
@@ -18,7 +19,10 @@ Monitoring plan:
 
 def get_mock_llm_delay_secs() -> float:
     """Return optional mock LLM delay for local Celery-flow testing."""
-    return float(os.getenv("MOCK_LLM_DELAY_SECS", "0"))
+    try:
+        return float(os.getenv("MOCK_LLM_DELAY_SECS", "0"))
+    except ValueError as exc:
+        raise LLMConfigurationError("MOCK_LLM_DELAY_SECS must be a number.") from exc
 
 
 class MockLLMService(BaseLLMService):

@@ -1,6 +1,8 @@
 import os
 from types import SimpleNamespace
 
+import pytest
+
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 
@@ -69,6 +71,24 @@ class FakeTaskSelf:
         raise self.retry_exc
 
 
+def test_get_llm_model_prefers_generic_configuration(monkeypatch):
+    from app.tasks import care_plan_tasks
+
+    monkeypatch.setenv("LLM_MODEL", "generic-model")
+    monkeypatch.setenv("OPENAI_MODEL", "legacy-model")
+
+    assert care_plan_tasks.get_llm_model() == "generic-model"
+
+
+def test_get_llm_model_falls_back_to_legacy_openai_configuration(monkeypatch):
+    from app.tasks import care_plan_tasks
+
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.setenv("OPENAI_MODEL", "legacy-model")
+
+    assert care_plan_tasks.get_llm_model() == "legacy-model"
+
+
 def test_generate_care_plan_task_marks_order_completed_and_creates_care_plan(monkeypatch):
     from app.tasks import care_plan_tasks
 
@@ -82,7 +102,7 @@ def test_generate_care_plan_task_marks_order_completed_and_creates_care_plan(mon
         "generate_care_plan_content",
         lambda order, model: "generated care plan",
     )
-    monkeypatch.setattr(care_plan_tasks, "get_openai_model", lambda: "test-model")
+    monkeypatch.setattr(care_plan_tasks, "get_llm_model", lambda: "test-model")
     monkeypatch.setattr(
         care_plan_tasks.care_plan_repository,
         "create_care_plan",
@@ -141,7 +161,7 @@ def test_generate_care_plan_task_allows_processing_order_on_retry(monkeypatch):
         "generate_care_plan_content",
         lambda order, model: "generated care plan",
     )
-    monkeypatch.setattr(care_plan_tasks, "get_openai_model", lambda: "test-model")
+    monkeypatch.setattr(care_plan_tasks, "get_llm_model", lambda: "test-model")
     monkeypatch.setattr(
         care_plan_tasks.care_plan_repository,
         "create_care_plan",
@@ -157,6 +177,32 @@ def test_generate_care_plan_task_allows_processing_order_on_retry(monkeypatch):
     assert created == [("order-1", "generated care plan", "test-model")]
 
 
+def test_generate_care_plan_task_does_not_retry_configuration_error(monkeypatch):
+    from app.llm.errors import LLMConfigurationError
+    from app.tasks import care_plan_tasks
+
+    order = make_order()
+    db = FakeDb(order)
+    task_self = FakeTaskSelf(retries=0)
+
+    def fail_generation(order, model):
+        raise LLMConfigurationError("raw configuration detail")
+
+    monkeypatch.setattr(care_plan_tasks, "SessionLocal", lambda: db)
+    monkeypatch.setattr(care_plan_tasks, "generate_care_plan_content", fail_generation)
+    monkeypatch.setattr(care_plan_tasks, "get_llm_model", lambda: "test-model")
+
+    with pytest.raises(LLMConfigurationError, match="raw configuration detail"):
+        care_plan_tasks.process_order_for_celery(task_self, "order-1")
+
+    assert task_self.retry_calls == []
+    assert order.status == "failed"
+    assert order.error_message == care_plan_tasks.WORKER_FAILURE_MESSAGE
+    assert "raw configuration detail" not in order.error_message
+    assert db.rollbacks == 1
+    assert db.closed is True
+
+
 def test_generate_care_plan_task_uses_celery_retry_before_final_failure(monkeypatch):
     from app.tasks import care_plan_tasks
 
@@ -169,7 +215,7 @@ def test_generate_care_plan_task_uses_celery_retry_before_final_failure(monkeypa
     task_self = FakeTaskSelf(retries=0)
     monkeypatch.setattr(care_plan_tasks, "SessionLocal", lambda: db)
     monkeypatch.setattr(care_plan_tasks, "generate_care_plan_content", fail_generation)
-    monkeypatch.setattr(care_plan_tasks, "get_openai_model", lambda: "test-model")
+    monkeypatch.setattr(care_plan_tasks, "get_llm_model", lambda: "test-model")
 
     try:
         care_plan_tasks.process_order_for_celery(task_self, "order-1")
@@ -196,7 +242,7 @@ def test_generate_care_plan_task_marks_failed_with_safe_message_after_final_retr
     task_self = FakeTaskSelf(retries=care_plan_tasks.MAX_RETRIES)
     monkeypatch.setattr(care_plan_tasks, "SessionLocal", lambda: db)
     monkeypatch.setattr(care_plan_tasks, "generate_care_plan_content", fail_generation)
-    monkeypatch.setattr(care_plan_tasks, "get_openai_model", lambda: "test-model")
+    monkeypatch.setattr(care_plan_tasks, "get_llm_model", lambda: "test-model")
     monkeypatch.setattr(care_plan_tasks.care_plan_repository, "create_care_plan", lambda *args, **kwargs: created.append(args))
 
     result = care_plan_tasks.process_order_for_celery(task_self, "order-1")

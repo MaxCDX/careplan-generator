@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 
@@ -28,3 +30,13 @@ def test_mock_service_honors_configured_delay(monkeypatch):
     MockLLMService().generate("ignored prompt", "ignored-model")
 
     assert delays == [1.5]
+
+
+def test_mock_service_rejects_non_numeric_delay(monkeypatch):
+    from app.llm.errors import LLMConfigurationError
+    from app.llm.services.mock_service import MockLLMService
+
+    monkeypatch.setenv("MOCK_LLM_DELAY_SECS", "not-a-number")
+
+    with pytest.raises(LLMConfigurationError, match="MOCK_LLM_DELAY_SECS must be a number."):
+        MockLLMService().generate("ignored prompt", "ignored-model")

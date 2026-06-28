@@ -1,6 +1,7 @@
 import os
 
 from app.llm.base import BaseLLMService
+from app.llm.errors import LLMConfigurationError
 from app.llm.services.claude_service import ClaudeService
 from app.llm.services.mock_service import MockLLMService
 from app.llm.services.openai_service import OpenAIService
@@ -19,4 +20,4 @@ def get_llm_service() -> BaseLLMService:
     if provider == "claude":
         return ClaudeService()
 
-    raise ValueError(f"Unsupported LLM provider: {provider}")
+    raise LLMConfigurationError(f"Unsupported LLM provider: {provider}")

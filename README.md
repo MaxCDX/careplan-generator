@@ -435,7 +435,7 @@ Example Docker values:
 
 ```env
 OPENAI_API_KEY=your_real_key_here
-OPENAI_MODEL=gpt-4o-mini
+LLM_MODEL=gpt-4o-mini
 LLM_PROVIDER=mock
 MOCK_LLM_DELAY_SECS=2
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
@@ -443,6 +443,8 @@ DATABASE_URL=postgresql+psycopg2://careplan:careplan@db:5432/careplan
 CELERY_BROKER_URL=redis://redis:6379/0
 CELERY_RESULT_BACKEND=redis://redis:6379/1
 ```
+
+`OPENAI_MODEL` remains supported as a legacy fallback when `LLM_MODEL` is not set.
 
 Start the app:
 

@@ -32,7 +32,8 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      LLM_MODEL: ${LLM_MODEL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       MOCK_LLM_DELAY_SECS: ${MOCK_LLM_DELAY_SECS:-0}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://careplan:careplan@db:5432/careplan}
@@ -50,7 +51,8 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      LLM_MODEL: ${LLM_MODEL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       MOCK_LLM_DELAY_SECS: ${MOCK_LLM_DELAY_SECS:-0}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://careplan:careplan@db:5432/careplan}
