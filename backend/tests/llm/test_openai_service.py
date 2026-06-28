@@ -1,21 +1,18 @@
 import os
 
 import pytest
-from fastapi import HTTPException
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 
 def test_openai_service_requires_api_key(monkeypatch):
+    from app.llm.errors import LLMConfigurationError
     from app.llm.services.openai_service import OpenAIService
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(LLMConfigurationError, match="OPENAI_API_KEY is missing."):
         OpenAIService().generate("prompt", "test-model")
-
-    assert exc_info.value.status_code == 500
-    assert exc_info.value.detail == "OPENAI_API_KEY is missing."
 
 
 def test_openai_service_calls_responses_api_with_prompt_and_model(monkeypatch):
@@ -45,3 +42,24 @@ def test_openai_service_calls_responses_api_with_prompt_and_model(monkeypatch):
         ("api_key", "test-key"),
         ("test-model", "built prompt"),
     ]
+
+
+def test_openai_service_wraps_provider_failure(monkeypatch):
+    from app.llm.errors import LLMProviderError
+    from app.llm.services import openai_service
+    from app.llm.services.openai_service import OpenAIService
+
+    class FakeResponses:
+        @staticmethod
+        def create(model, input):
+            raise RuntimeError("provider-secret-detail")
+
+    class FakeOpenAI:
+        def __init__(self, api_key):
+            self.responses = FakeResponses()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(openai_service, "OpenAI", FakeOpenAI)
+
+    with pytest.raises(LLMProviderError, match="OpenAI generation failed."):
+        OpenAIService().generate("built prompt", "test-model")

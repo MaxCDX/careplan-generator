@@ -1,6 +1,7 @@
 import os
 
 from app.llm.base import BaseLLMService
+from app.llm.errors import LLMConfigurationError, LLMProviderError
 
 Anthropic = None
 
@@ -21,13 +22,17 @@ class ClaudeService(BaseLLMService):
     def generate(self, prompt: str, model: str) -> str:
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY is not configured.")
+            raise LLMConfigurationError("ANTHROPIC_API_KEY is not configured.")
 
-        client_class = get_anthropic_client_class()
-        client = client_class(api_key=api_key)
-        message = client.messages.create(
-            model=model,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        try:
+            client_class = get_anthropic_client_class()
+            client = client_class(api_key=api_key)
+            message = client.messages.create(
+                model=model,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as exc:
+            raise LLMProviderError("Claude generation failed.") from exc
+
         return message.content[0].text

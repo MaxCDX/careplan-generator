@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, status
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.exceptions import ServiceUnavailableError
+from app.exceptions import BadRequestError, ServiceUnavailableError
 from app.external_orders.service import normalize_external_order
 from app.orders import service as order_service
 from app.orders.schemas import OrderAccepted, WarningResponse
@@ -41,9 +41,10 @@ def create_external_order(
     try:
         normalized_order = normalize_external_order(source, payload)
     except (ValueError, ValidationError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+        raise BadRequestError(
+            code="INVALID_EXTERNAL_ORDER",
+            message="Invalid external order input.",
+            detail={"error": str(exc)},
         ) from exc
 
     try:
@@ -65,4 +66,3 @@ def create_external_order(
         status="queued",
         message="Care plan generation request accepted",
     )
-
