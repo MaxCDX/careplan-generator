@@ -1,15 +1,12 @@
 import os
-from types import SimpleNamespace
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.care_plans import routes as care_plan_routes
 from app.database import get_db
 from app.external_orders import routes as external_order_routes
-from app.llm.errors import LLMConfigurationError
 from app.main import app
 
 
@@ -42,154 +39,6 @@ def test_external_order_normalization_failure_uses_app_error_envelope(monkeypatc
     }
 
 
-def test_generate_care_plan_missing_order_uses_app_error_envelope(monkeypatch):
-    monkeypatch.setattr(
-        care_plan_routes.order_repository,
-        "get_order",
-        lambda db, order_id: None,
-    )
-
-    response = request_with_db(
-        "POST",
-        "/care-plans",
-        object(),
-        json={"order_id": "missing-order"},
-    )
-
-    assert response.status_code == 404
-    assert response.json() == {
-        "status": "error",
-        "code": "ORDER_NOT_FOUND",
-        "message": "Order not found.",
-        "detail": {},
-    }
-
-
-def test_generate_care_plan_existing_plan_uses_app_error_envelope(monkeypatch):
-    order = SimpleNamespace(care_plan=object())
-    monkeypatch.setattr(
-        care_plan_routes.order_repository,
-        "get_order",
-        lambda db, order_id: order,
-    )
-
-    response = request_with_db(
-        "POST",
-        "/care-plans",
-        object(),
-        json={"order_id": "order-1"},
-    )
-
-    assert response.status_code == 409
-    assert response.json() == {
-        "status": "error",
-        "code": "CARE_PLAN_ALREADY_EXISTS",
-        "message": "Care plan already exists for this order.",
-        "detail": {},
-    }
-
-
-def test_generate_care_plan_llm_error_uses_safe_app_error_envelope(monkeypatch):
-    class FakeDB:
-        def add(self, instance):
-            pass
-
-        def commit(self):
-            pass
-
-        def refresh(self, instance):
-            pass
-
-        def rollback(self):
-            pass
-
-    order = SimpleNamespace(
-        id="order-1",
-        care_plan=None,
-        status="queued",
-        error_message=None,
-    )
-    monkeypatch.setattr(
-        care_plan_routes.order_repository,
-        "get_order",
-        lambda db, order_id: order,
-    )
-
-    def fail_generation(order, model):
-        raise LLMConfigurationError("provider-secret-detail")
-
-    monkeypatch.setattr(
-        care_plan_routes,
-        "generate_care_plan_content",
-        fail_generation,
-    )
-
-    response = request_with_db(
-        "POST",
-        "/care-plans",
-        FakeDB(),
-        json={"order_id": "order-1"},
-    )
-
-    assert response.status_code == 503
-    assert response.json() == {
-        "status": "error",
-        "code": "CARE_PLAN_GENERATION_UNAVAILABLE",
-        "message": "Care plan generation is currently unavailable. Please try again later.",
-        "detail": {},
-    }
-    assert "provider-secret-detail" not in response.text
-    assert order.status == "failed"
-    assert order.error_message == "Care plan generation failed. Please try again later."
-
-
-def test_generate_care_plan_unexpected_error_is_not_converted_to_503(monkeypatch):
-    class FakeDB:
-        def add(self, instance):
-            pass
-
-        def commit(self):
-            pass
-
-        def refresh(self, instance):
-            pass
-
-        def rollback(self):
-            pass
-
-    order = SimpleNamespace(
-        id="order-1",
-        care_plan=None,
-        status="queued",
-        error_message=None,
-    )
-    monkeypatch.setattr(
-        care_plan_routes.order_repository,
-        "get_order",
-        lambda db, order_id: order,
-    )
-
-    def fail_generation(order, model):
-        raise RuntimeError("unexpected-code-error")
-
-    monkeypatch.setattr(
-        care_plan_routes,
-        "generate_care_plan_content",
-        fail_generation,
-    )
-
-    with pytest.raises(RuntimeError, match="unexpected-code-error"):
-        request_with_db(
-            "POST",
-            "/care-plans",
-            FakeDB(),
-            json={"order_id": "order-1"},
-        )
-
-    assert order.status == "failed"
-    assert order.error_message == "Care plan generation failed. Please try again later."
-
-
 def test_get_care_plan_missing_plan_uses_app_error_envelope(monkeypatch):
     monkeypatch.setattr(
         care_plan_routes.care_plan_repository,
@@ -206,3 +55,12 @@ def test_get_care_plan_missing_plan_uses_app_error_envelope(monkeypatch):
         "message": "Care plan not found.",
         "detail": {},
     }
+
+
+def test_care_plan_openapi_is_read_only():
+    response = TestClient(app).get("/openapi.json")
+
+    assert response.status_code == 200
+    care_plan_routes = response.json()["paths"]["/care-plans"]
+    assert "get" in care_plan_routes
+    assert "post" not in care_plan_routes
