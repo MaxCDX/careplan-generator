@@ -1,6 +1,6 @@
 # Care Plan Generator
 
-> Current Status: Day 8 — Async Workflow MVP with Validation, Duplicate Detection, Warning Confirmation, Testing, and CI
+> Current Status: Day 10 — Multi-source Ingestion and LLM Provider Abstraction
 
 Care Plan Generator is a healthcare workflow system for specialty pharmacy staff. It lets an operator submit patient, provider, medication, diagnosis, and clinical-note information, then generates a pharmacist-review care plan draft using an LLM.
 
@@ -10,7 +10,16 @@ This project is not just a GPT wrapper. The main engineering focus is workflow c
 
 ## What It Does Now
 
-The current MVP supports a database-backed async workflow with validation, duplicate detection, warning confirmation, and background care plan generation:
+The current MVP provides:
+
+- one canonical Order workflow for browser and partner submissions
+- multi-source healthcare intake across JSON, XML, CSV, and Excel formats
+- validation, duplicate detection, and warning confirmation before persistence
+- asynchronous care plan generation through Redis and Celery
+- pluggable Mock, OpenAI, and Claude LLM providers
+- structured API errors and safe background failure messages
+
+The primary browser workflow is:
 
 ```text
 Frontend form
@@ -64,7 +73,6 @@ Frontend polling stops when:
 - completed
 - failed
 - frontend timeout reached
-```
 
 If queue dispatch fails:
 
@@ -76,19 +84,24 @@ Job is not queued
 
 Workflow state survives backend restarts because Orders are stored in PostgreSQL instead of Python process memory.
 
+Partner integrations submit source-specific payloads to `POST /external-orders/{source}`. The backend normalizes them into the same `OrderCreate` contract and reuses the complete Order workflow above.
+
 ---
 
 ## Tech Stack
 
 - Frontend: Next.js, React, TypeScript
-- Backend: FastAPI, Pydantic, SQLAlchemy, OpenAI SDK
+- Backend: FastAPI, Pydantic, SQLAlchemy, OpenAI SDK, Anthropic SDK
 - Database: PostgreSQL
 - Async Processing: Celery, Redis
+- Architecture Patterns: Adapter Pattern, Factory Pattern
 - Infrastructure: Docker, Docker Compose, GitHub Actions CI
 
 ---
 
 ## Architecture
+
+### Primary Async Workflow
 
 ```text
 ┌────────────┐   ┌────────────┐   ┌────────────┐   ┌────────────┐
@@ -139,7 +152,7 @@ Technology responsibilities:
 - Redis acts as the Celery message broker
 - Celery workers process long-running background LLM jobs
 
-Current Day 8 async workflow:
+Current async workflow:
 
 ```text
 1. Next.js frontend submits form
@@ -158,6 +171,50 @@ Current Day 8 async workflow:
 14. Next.js frontend polling detects completed status
 15. Next.js frontend displays generated result
 ```
+
+### Multi-source Intake Flow
+
+```text
+External Sources (JSON/XML/CSV/Excel)
+            │
+            ▼
+     Adapter + Factory
+            │
+            ▼
+    Canonical OrderCreate
+            │
+            ▼
+ Existing Order Workflow
+```
+
+All external sources normalize into the canonical `OrderCreate` schema before entering the existing async workflow.
+
+| Source | Format |
+| --- | --- |
+| `clinic_b` | Nested JSON |
+| `pharmacorp` | XML |
+| `healthfirst` | CSV |
+| `enterprise_spreadsheet` | Excel |
+
+Spreadsheet ingestion currently uses backend-side file paths for demonstration and testing. Browser-based file upload is not yet implemented.
+
+### LLM Provider Architecture
+
+```text
+build_prompt(order)
+          │
+          ▼
+   get_llm_service()
+          │
+          ▼
+      LLM Factory
+          │
+   ┌──────┼──────┐
+   ▼      ▼      ▼
+ Mock  OpenAI Claude
+```
+
+Business workflow code remains provider-agnostic.
 
 ---
 
@@ -218,62 +275,18 @@ Order    1 → zero or one CarePlan
 ```text
 careplan-generator/
 ├── backend/
-│   └── app/
-│       ├── main.py                  # FastAPI app setup and router registration
-│       ├── database.py              # SQLAlchemy engine/session/Base
-│       ├── models.py                # shared SQLAlchemy entities
-│       ├── celery_app.py            # Celery configuration and Redis broker setup
-│       ├── exceptions.py            # application exception types and error response metadata
-│       │
-│       ├── tasks/
-│       │   └── care_plan_tasks.py   # Celery worker entrypoint and async workflow processing
-│       │
-│       ├── patients/
-│       │   ├── repository.py        # patient lookup/create by MRN
-│       │   ├── schemas.py           # patient DTOs
-│       │   └── models.py            # feature-level model alias
-│       │
-│       ├── providers/
-│       │   ├── repository.py        # provider lookup/create by NPI
-│       │   ├── schemas.py           # provider DTOs
-│       │   └── models.py            # feature-level model alias
-│       │
-│       ├── orders/
-│       │   ├── routes.py            # HTTP endpoints for order APIs
-│       │   ├── service.py           # order workflow orchestration + Celery dispatch
-│       │   ├── repository.py        # order database operations
-│       │   ├── serializers.py       # Order -> API response formatting
-│       │   ├── schemas.py           # request/response DTOs
-│       │   └── models.py            # feature-level model alias
-│       │
-│       └── care_plans/
-│           ├── routes.py            # HTTP endpoints for care plan APIs
-│           ├── service.py           # LLM provider selection and generation logic
-│           ├── prompts.py           # prompt construction
-│           ├── repository.py        # care plan database operations
-│           ├── serializers.py       # CarePlan -> API response formatting
-│           ├── schemas.py           # request/response DTOs
-│           └── models.py            # feature-level model alias
-│
-├── frontend/
 │   ├── app/
-│   │   ├── page.tsx                 # top-level page orchestration and state ownership
-│   │   └── layout.tsx               # root layout and metadata
-│   │
-│   ├── components/
-│   │   ├── OrderForm.tsx            # presentational order submission form
-│   │   ├── OrderStatus.tsx          # status/error/result state display
-│   │   ├── CarePlanResult.tsx       # generated care plan rendering
-│   │
-│   ├── hooks/
-│   │   └── useOrderPolling.ts       # polling lifecycle, timeout, cleanup logic
-│   │
-│   ├── lib/
-│   │   └── api.ts                   # centralized frontend API calls
-│   │
-│   └── types/
-│       └── orders.ts                # shared frontend request/response types
-│
+│   │   ├── external_orders/         # source adapters, factory, and intake API
+│   │   ├── llm/                     # provider interface, factory, and services
+│   │   ├── orders/                  # canonical workflow and persistence
+│   │   ├── care_plans/              # prompts, generated artifacts, read APIs
+│   │   ├── patients/                # patient identity and persistence
+│   │   ├── providers/               # provider identity and persistence
+│   │   └── tasks/                   # Celery worker processing
+│   └── tests/
+│       ├── external_orders/         # source normalization and error tests
+│       └── llm/                     # provider and factory tests
+├── frontend/                        # Next.js form, polling, and result UI
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -342,10 +355,15 @@ Current endpoints:
 
 ```text
 POST /orders
+POST /external-orders/{source}
 GET /orders
 GET /orders/{order_id}
 GET /orders/{order_id}/status
+GET /care-plans
+GET /care-plans/{care_plan_id}
 ```
+
+`POST /orders` and `POST /external-orders/{source}` both enter the same asynchronous Order workflow. Care plans are generated only by the Celery worker; the CarePlan API is read-only.
 
 ---
 
@@ -404,6 +422,9 @@ Current error categories:
 400 VALIDATION_ERROR
 → request format is invalid
 
+400 INVALID_EXTERNAL_ORDER
+→ an external source payload could not be parsed or normalized
+
 409 PROVIDER_NPI_CONFLICT
 → provider NPI already belongs to a different provider name
 
@@ -419,6 +440,8 @@ Current error categories:
 
 Warnings are intentionally not exceptions. They are normal business responses because the user can confirm and continue.
 
+External parsing details and background provider failures are not exposed to clients. Asynchronous generation failures are stored and returned as safe user-facing messages.
+
 ---
 
 ## How to Run
@@ -429,20 +452,21 @@ Create a local environment file:
 cp .env.example .env
 ```
 
-Add your real OpenAI API key to `.env`.
-
 Example Docker values:
 
 ```env
-OPENAI_API_KEY=your_real_key_here
-LLM_MODEL=gpt-4o-mini
 LLM_PROVIDER=mock
+LLM_MODEL=mock-model
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
 MOCK_LLM_DELAY_SECS=2
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 DATABASE_URL=postgresql+psycopg2://careplan:careplan@db:5432/careplan
 CELERY_BROKER_URL=redis://redis:6379/0
 CELERY_RESULT_BACKEND=redis://redis:6379/1
 ```
+
+Supported values are `LLM_PROVIDER=mock|openai|claude`. `OPENAI_API_KEY` is required only for the OpenAI provider, while `ANTHROPIC_API_KEY` is required only for the Claude provider. Set `LLM_MODEL` to a model supported by the selected provider.
 
 `OPENAI_MODEL` remains supported as a legacy fallback when `LLM_MODEL` is not set.
 
@@ -472,7 +496,7 @@ cd backend
 PYTHONPATH=. pytest tests
 ```
 
-The backend test suite covers validation errors, patient/provider duplicate detection, warning responses, blocking conflicts, Celery dispatch behavior, and API integration paths.
+The current backend suite contains 78 passing tests covering validation, duplicate detection, warning and conflict flows, external adapters, LLM providers, Celery processing, and API integration.
 
 ---
 
@@ -564,6 +588,7 @@ These are intentionally deferred so each future architecture layer solves a real
 
 ```text
 Frontend submits intent.
+External sources normalize into the canonical OrderCreate contract.
 Backend validates input before business logic.
 Backend blocks invalid business conflicts before workflow creation.
 Backend returns warnings for confirmable duplicate risks.
@@ -572,6 +597,7 @@ Backend owns workflow state.
 PostgreSQL owns durable state.
 Redis acts as Celery broker.
 Celery workers process background jobs.
+The LLM factory selects Mock, OpenAI, or Claude through configuration.
 Order owns lifecycle state.
 CarePlan owns generated output.
 Frontend polls workflow status every 3 seconds after accepted submissions.
