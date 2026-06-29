@@ -34,12 +34,13 @@ def test_mock_provider_returns_fixed_care_plan_without_openai_api_key(monkeypatc
 
 def test_mock_provider_uses_configured_delay(monkeypatch):
     from app.care_plans import service
+    from app.llm.services import mock_service
 
     delays = []
 
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.setenv("MOCK_LLM_DELAY_SECS", "1.5")
-    monkeypatch.setattr(service.time, "sleep", lambda delay: delays.append(delay))
+    monkeypatch.setattr(mock_service.time, "sleep", lambda delay: delays.append(delay))
 
     service.generate_care_plan_content(make_order(), "test-model")
 

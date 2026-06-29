@@ -2,11 +2,13 @@
 .env
 .env.*
 !.env.example
+
+# Local project context / learning docs
 requirement.md
 project_instruction.md
 docs/system-design.md
-
-# Local interview/prep notes
+AGENTS.md
+docs/PROJECT_STATE.md
 interview.md
 
 # Uploaded or local mock data files

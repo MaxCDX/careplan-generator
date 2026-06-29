@@ -27,6 +27,18 @@ class BaseAppException(Exception):
         super().__init__(self.message)
 
 
+class BadRequestError(BaseAppException):
+    """Raised when client input cannot be processed."""
+
+    def __init__(self, code: str, message: str, detail: dict | None = None):
+        super().__init__(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code=code,
+            message=message,
+            detail=detail,
+        )
+
+
 class ConflictError(BaseAppException):
     """Raised when a business rule blocks the request."""
 

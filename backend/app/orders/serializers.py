@@ -38,7 +38,7 @@ def serialize_order(order: Order) -> OrderRead:
 
 
 def serialize_order_status(order: Order) -> OrderStatusRead:
-    """Convert an Order into the minimal Day 6 polling response."""
+    """Convert an Order into the minimal polling response."""
     care_plan_content = (
         order.care_plan.care_plan_content
         if order.status == "completed" and order.care_plan is not None
