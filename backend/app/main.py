@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.care_plans.routes import router as care_plans_router
 from app.database import init_db
@@ -74,3 +75,14 @@ app.add_middleware(
 app.include_router(orders_router)
 app.include_router(care_plans_router)
 app.include_router(external_orders_router)
+
+
+# Request metrics use FastAPI route templates (for example,
+# /orders/{order_id}/status), never raw URLs or healthcare identifiers.
+Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    should_instrument_requests_inprogress=True,
+    inprogress_labels=True,
+    excluded_handlers=[r"^/metrics$"],
+).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)

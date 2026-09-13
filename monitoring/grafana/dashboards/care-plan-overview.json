@@ -1,0 +1,112 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total[5m])) by (handler)", "legendFormat": "{{handler}}", "refId": "A" }
+      ],
+      "title": "Request Rate by Route",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total[5m])) by (status)", "legendFormat": "HTTP {{status}}", "refId": "A" }
+      ],
+      "title": "Response Status Outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_highr_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "A" }
+      ],
+      "title": "HTTP p95 Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{status=~\"4..|5..\"}[5m])) by (status)", "legendFormat": "HTTP {{status}}", "refId": "A" }
+      ],
+      "title": "4xx / 5xx Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "sum(http_requests_inprogress) by (method, handler)", "legendFormat": "{{method}} {{handler}}", "refId": "A" }
+      ],
+      "title": "In-progress Requests",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "rate(process_cpu_seconds_total{job=\"backend\"}[5m])", "legendFormat": "CPU cores", "refId": "A" },
+        { "expr": "process_resident_memory_bytes{job=\"backend\"}", "legendFormat": "resident memory bytes", "refId": "B" }
+      ],
+      "title": "Backend Process CPU / Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 7,
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        { "expr": "up{job=\"backend\"}", "legendFormat": "backend", "refId": "A" }
+      ],
+      "title": "Prometheus Target Up",
+      "type": "stat"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": ["care-plan", "fastapi", "prometheus"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Care Plan Generator Overview",
+  "uid": "care-plan-overview",
+  "version": 1
+}

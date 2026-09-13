@@ -5,6 +5,7 @@ anthropic
 openpyxl
 python-dotenv
 pydantic
+prometheus-fastapi-instrumentator==8.0.2
 SQLAlchemy
 psycopg2-binary
 redis

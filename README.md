@@ -1,6 +1,6 @@
 # Care Plan Generator
 
-> Current Status: Day 10 — Multi-source Ingestion and LLM Provider Abstraction
+> Current Status: Prometheus and Grafana Monitoring Complete
 
 Care Plan Generator is a healthcare workflow system for specialty pharmacy staff. It lets an operator submit patient, provider, medication, diagnosis, and clinical-note information, then generates a pharmacist-review care plan draft using an LLM.
 
@@ -18,6 +18,7 @@ The current MVP provides:
 - asynchronous care plan generation through Redis and Celery
 - pluggable Mock, OpenAI, and Claude LLM providers
 - structured API errors and safe background failure messages
+- Prometheus HTTP/runtime metrics with a provisioned Grafana dashboard
 
 The primary browser workflow is:
 
@@ -481,7 +482,26 @@ Open:
 ```text
 Frontend: http://localhost:3000
 Backend:  http://localhost:8000
+Metrics:  http://localhost:8000/metrics
+Prometheus: http://localhost:9090
+Grafana: http://localhost:3001 (local default: admin/admin)
 ```
+
+## Local Monitoring
+
+Prometheus scrapes the FastAPI backend every 15 seconds. Grafana automatically
+provisions the Prometheus datasource and the **Care Plan Generator Overview**
+dashboard when the Compose stack starts.
+
+The dashboard shows request rate by normalized FastAPI route template, response
+status outcomes, p95 request latency, 4xx/5xx rate, in-progress requests,
+backend process CPU/memory when supported by the container runtime, and the
+Prometheus backend target status.
+
+Metrics never use raw request paths or healthcare/business identifiers as
+labels. The `/metrics` endpoint is excluded from request instrumentation.
+Prometheus is operational telemetry only; PostgreSQL remains the source of
+truth for Order workflow state and CarePlan artifacts.
 
 Run backend tests in Docker:
 
@@ -496,7 +516,7 @@ cd backend
 PYTHONPATH=. pytest tests
 ```
 
-The current backend suite contains 78 passing tests covering validation, duplicate detection, warning and conflict flows, external adapters, LLM providers, Celery processing, and API integration.
+The current backend suite contains 82 passing tests covering validation, duplicate detection, warning and conflict flows, external adapters, LLM providers, Celery processing, API integration, and metrics behavior.
 
 ---
 
@@ -576,7 +596,7 @@ Not implemented yet:
 - audit logging and access tracing
 - PDF upload and document extraction
 - production PHI hardening
-- monitoring and alerting
+- alerting, distributed tracing, and worker/container exporters
 - production deployment pipeline
 - frontend automated tests
 
@@ -603,4 +623,6 @@ CarePlan owns generated output.
 Frontend polls workflow status every 3 seconds after accepted submissions.
 Frontend timeout does not automatically mean backend failure.
 GitHub Actions runs backend tests on pushes and pull requests.
+Prometheus scrapes normalized FastAPI request/runtime metrics.
+Grafana provisions a local overview dashboard from version-controlled files.
 ```

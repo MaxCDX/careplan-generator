@@ -72,7 +72,7 @@ export function useOrderPolling({
       }
     }
 
-    // Day 6 polling reads Order.status while Celery updates the database asynchronously.
+    // Polling reads Order.status while Celery updates the database asynchronously.
     setIsPolling(true)
     pollOrder()
     pollTimer = setInterval(pollOrder, 3000)
