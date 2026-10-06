@@ -53,7 +53,7 @@ class Order(Base):
     medication = Column(String(200), nullable=False)
     diagnosis = Column(String(500), nullable=False)
     clinical_notes = Column(Text, nullable=False)
-    status = Column(String(30), nullable=False, default="pending", index=True)
+    status = Column(String(30), nullable=False, default="queued", index=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

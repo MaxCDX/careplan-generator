@@ -124,7 +124,7 @@ Partner integrations submit source-specific payloads to `POST /external-orders/{
       │                │                │                │
       │                │                │ 5. Save result │
       │                │                │◀───────────────│
-      │                │                │ status=done    │
+      │                │                │status=completed│
       │                │                │                │
       │ 6. Poll status │                │                │
       │───────────────▶│ 7. Get status  │                │
@@ -139,7 +139,7 @@ Partner integrations submit source-specific payloads to `POST /external-orders/{
       │───────────────▶│10. Get status  │                │
       │                │───────────────▶│                │
       │                │◀───────────────│                │
-      │11. Return done │                │                │
+      │11. Completed   │                │                │
       │◀───────────────│                │                │
       │                │                │                │
       │12. Render      │                │                │
@@ -267,7 +267,7 @@ Provider 1 → many Orders
 Order    1 → zero or one CarePlan
 ```
 
-`Order` owns workflow state. `CarePlan` owns generated output. Status belongs on `Order` because `pending`, `processing`, and `failed` can happen before a care plan exists.
+`Order` owns workflow state. `CarePlan` owns generated output. Status belongs on `Order` because `queued`, `processing`, and `failed` can happen before a care plan exists.
 
 ---
 
