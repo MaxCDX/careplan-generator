@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -7,7 +9,7 @@ from app.exceptions import NotFoundError, ServiceUnavailableError
 from app.orders import repository
 from app.orders import service
 from app.orders.serializers import serialize_order, serialize_order_status
-from app.orders.schemas import OrderAccepted, OrderCreate, OrderRead, OrderStatusRead, WarningResponse
+from app.orders.schemas import OrderAccepted, OrderCreate, OrderListResponse, OrderRead, OrderStatusRead, WarningResponse
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -55,10 +57,27 @@ def create_order(data: OrderCreate, db: Session = Depends(get_db)):
     )
 
 
-@router.get("", response_model=list[OrderRead])
-def list_orders(db: Session = Depends(get_db)):
-    """Return all persisted Orders, newest first."""
-    return [serialize_order(order) for order in repository.list_orders(db)]
+@router.get(
+    "",
+    response_model=OrderListResponse,
+    responses={400: {"description": "Invalid query parameters"}},
+)
+def list_orders(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    order_status: Literal["queued", "processing", "completed", "failed"] | None = Query(default=None, alias="status"),
+    patient_name: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """Return a filtered page of Orders, newest first."""
+    count, orders = repository.list_orders(
+        db, page=page, page_size=page_size,
+        order_status=order_status, patient_name=patient_name,
+    )
+    return OrderListResponse(
+        count=count, page=page, page_size=page_size,
+        results=[serialize_order(order) for order in orders],
+    )
 
 
 @router.get("/{order_id}/status", response_model=OrderStatusRead)

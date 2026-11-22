@@ -368,6 +368,42 @@ GET /care-plans/{care_plan_id}
 
 ---
 
+## Orders List Pagination and Filtering
+
+`GET /orders` returns a paginated envelope. For example, 358 matching Orders
+fill 18 pages at 20 per page. A request for page 19 returns:
+
+```json
+{"count": 358, "page": 19, "page_size": 20, "results": []}
+```
+
+`results` contains the existing `OrderRead` representation, including nested
+patient/provider data and the existing care-plan content behavior.
+
+| Query parameter | Default | Behavior |
+| --- | --- | --- |
+| `page` | `1` | Integer, minimum 1 |
+| `page_size` | `20` | Integer, between 1 and 100 |
+| `status` | Omitted | Exactly `queued`, `processing`, `completed`, or `failed` |
+| `patient_name` | Omitted | Case-insensitive literal substring of related `Patient.name` |
+
+Patient-name input is trimmed; empty or whitespace-only input disables that
+filter. `%` and `_` are treated as literal characters. Multiple filters use AND.
+For example, `/orders?page=2&page_size=20&status=failed&patient_name=John` selects
+failed Orders whose related patient name contains John, ignoring case.
+
+Filtering, counting, and pagination run in the database. `count` is the total
+matching Order count before pagination. Results sort by `created_at DESC`, then
+`id DESC`. No matches or a page beyond the results returns HTTP 200 with an empty
+`results` array; the requested page and real total count are preserved.
+Invalid query parameters return the existing HTTP 400 `VALIDATION_ERROR` envelope.
+
+Callers that previously consumed an array must now read `results` and request
+additional pages as needed. The existing frontend uses submission and status
+endpoints and does not consume this list endpoint.
+
+---
+
 ## Validation, Duplicate Detection, and Warnings
 
 The order submission flow performs checks before creating an Order or dispatching a Celery task.
@@ -516,7 +552,7 @@ cd backend
 PYTHONPATH=. pytest tests
 ```
 
-The current backend suite contains 82 passing tests covering validation, duplicate detection, warning and conflict flows, external adapters, LLM providers, Celery processing, API integration, and metrics behavior.
+The backend suite covers validation, duplicate detection, warning and conflict flows, external adapters, LLM providers, Celery processing, API integration, and metrics behavior. Orders list tests cover database filtering, filtered totals, page boundaries, and deterministic ordering.
 
 ---
 

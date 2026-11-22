@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.orders.models import Order
 from app.orders.schemas import OrderCreate
+from app.patients.models import Patient
 from app.patients.repository import get_or_create_patient
 from app.providers.repository import get_or_create_provider
 
@@ -51,14 +52,30 @@ def mark_order_failed(db: Session, order_id: str, error_message: str) -> None:
     db.commit()
 
 
-def list_orders(db: Session) -> list[Order]:
-    """Load all Orders with related rows needed by the API serializer."""
-    return (
-        db.query(Order)
+def list_orders(
+    db: Session, *, page: int = 1, page_size: int = 20,
+    order_status: str | None = None, patient_name: str | None = None,
+) -> tuple[int, list[Order]]:
+    """Count matching Orders and load only the requested page with related rows."""
+    query = db.query(Order)
+    if order_status is not None:
+        query = query.filter(Order.status == order_status)
+    cleaned_name = patient_name.strip() if patient_name is not None else ""
+    if cleaned_name:
+        # Escape LIKE metacharacters so user input is a literal substring.
+        escaped_name = cleaned_name.replace("/", "//").replace("%", "/%").replace("_", "/_")
+        query = query.join(Order.patient).filter(Patient.name.ilike(f"%{escaped_name}%", escape="/"))
+
+    count = query.count()
+    orders = (
+        query
         .options(joinedload(Order.patient), joinedload(Order.provider), joinedload(Order.care_plan))
-        .order_by(Order.created_at.desc())
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .limit(page_size)
+        .offset((page - 1) * page_size)
         .all()
     )
+    return count, orders
 
 
 def get_order(db: Session, order_id: str) -> Order | None:

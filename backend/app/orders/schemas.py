@@ -107,6 +107,15 @@ class OrderRead(BaseModel):
     updated_at: datetime | None = None
 
 
+class OrderListResponse(BaseModel):
+    """Paginated Order list with a total count before pagination."""
+
+    count: int
+    page: int
+    page_size: int
+    results: list[OrderRead]
+
+
 class OrderStatusRead(BaseModel):
     """Minimal response body for frontend polling."""
 
