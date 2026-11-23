@@ -1,17 +1,20 @@
-from datetime import datetime
+from datetime import date, datetime
 import re
 
 from pydantic import BaseModel, field_validator
 
 from app.patients.schemas import PatientRead
+from app.patients.validators import blank_to_none, parse_birth_date, validate_mrn, validate_name, validate_middle_name
 from app.providers.schemas import ProviderRead
 
 
 class OrderCreate(BaseModel):
     """Request body for creating an Order from the frontend intake form."""
 
-    patient_name: str
-    patient_dob: str | None = None
+    patient_first_name: str
+    patient_middle_name: str | None = None
+    patient_last_name: str
+    patient_date_of_birth: date | None = None
     mrn: str
     provider_name: str
     provider_npi: str
@@ -21,7 +24,6 @@ class OrderCreate(BaseModel):
     confirm: bool = False
 
     @field_validator(
-        "patient_name",
         "provider_name",
         "diagnosis",
         "medication",
@@ -42,29 +44,25 @@ class OrderCreate(BaseModel):
             raise ValueError("Provider NPI must be exactly 10 digits")
         return cleaned
 
+    @field_validator("patient_first_name", "patient_last_name")
+    @classmethod
+    def check_name(cls, value: str) -> str:
+        return validate_name(value)
+
+    @field_validator("patient_middle_name")
+    @classmethod
+    def check_middle_name(cls, value: str | None) -> str | None:
+        return validate_middle_name(value)
+
     @field_validator("mrn")
     @classmethod
     def mrn_must_be_6_digits(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not re.fullmatch(r"\d{6}", cleaned):
-            raise ValueError("Patient MRN must be exactly 6 digits")
-        return cleaned
+        return validate_mrn(value)
 
-    @field_validator("patient_dob")
+    @field_validator("patient_date_of_birth", mode="before")
     @classmethod
-    def patient_dob_must_be_valid_date(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-
-        cleaned = value.strip()
-        if not cleaned:
-            return None
-
-        try:
-            datetime.strptime(cleaned, "%Y-%m-%d")
-        except ValueError as exc:
-            raise ValueError("Patient DOB must use YYYY-MM-DD format") from exc
-        return cleaned
+    def validate_patient_date_of_birth(cls, value) -> date | None:
+        return parse_birth_date(blank_to_none(value))
 
 
 class OrderAccepted(BaseModel):

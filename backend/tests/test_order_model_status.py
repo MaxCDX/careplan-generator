@@ -20,7 +20,7 @@ def db():
 
 
 def make_order(db, **overrides):
-    patient = Patient(name="Fictional Patient", mrn="123456")
+    patient = Patient(first_name="Fictional", last_name="Patient", mrn="123456")
     provider = Provider(name="Fictional Provider", npi="1234567890")
     db.add_all([patient, provider])
     db.flush()

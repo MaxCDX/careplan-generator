@@ -226,9 +226,9 @@ Business workflow code remains provider-agnostic.
 │   Patient    │        │   Provider   │
 ├──────────────┤        ├──────────────┤
 │ id           │        │ id           │
-│ name         │        │ name         │
+│ first_name   │        │ name         │
 │ mrn          │        │ npi          │
-│ dob          │        └──────┬───────┘
+│ last_name    │        └──────┬───────┘
 └──────┬───────┘               │
        │                       │
        ▼                       ▼
@@ -319,8 +319,10 @@ Creates a durable async workflow request, dispatches a Celery background task, a
 
 ```json
 {
-  "patient_name": "Example Patient",
-  "patient_dob": "1980-01-01",
+  "patient_first_name": "Example",
+  "patient_middle_name": null,
+  "patient_last_name": "Patient",
+  "patient_date_of_birth": "1980-01-01",
   "mrn": "123456",
   "provider_name": "Dr. Example Provider",
   "provider_npi": "0000000000",
@@ -352,9 +354,25 @@ Possible `POST /orders` responses:
 → Order was created but the queue dispatch failed
 ```
 
+Patient registration uses `POST /patients`. Required fields are first_name, last_name,
+mrn (six digits as a string) and primary_diagnosis (ICD-10 format). An optional
+middle_name may be omitted, null or blank. Optional fields include date_of_birth
+(YYYY-MM-DD), sex (Female/Male/Other), positive weight_kg, allergies and a list of
+additional_diagnoses. Registration returns 201 with the stored fields, UUID and
+created_at. Invalid input returns 400. An existing MRN or exact first and last
+names with a matching known birth date returns 409 with detail.existing_patient_id.
+MRN takes precedence; identity matching ignores middle_name. Order submission
+retains its separate reuse and confirmable-warning behavior.
+
+This schema replaces the old single-name layout. Existing development databases
+require a schema reset before startup; resetting deletes local records. create_all does not alter
+existing tables. Verify the local DB target and its postgres_data volume before
+removing data. Preserve Prometheus and Grafana volumes.
+
 Current endpoints:
 
 ```text
+POST /patients
 POST /orders
 POST /external-orders/{source}
 GET /orders
@@ -385,7 +403,7 @@ patient/provider data and the existing care-plan content behavior.
 | `page` | `1` | Integer, minimum 1 |
 | `page_size` | `20` | Integer, between 1 and 100 |
 | `status` | Omitted | Exactly `queued`, `processing`, `completed`, or `failed` |
-| `patient_name` | Omitted | Case-insensitive literal substring of related `Patient.name` |
+| `patient_name` | Omitted | Case-insensitive literal substring of the patient’s full name |
 
 Patient-name input is trimmed; empty or whitespace-only input disables that
 filter. `%` and `_` are treated as literal characters. Multiple filters use AND.
@@ -413,7 +431,7 @@ Validation checks happen in Pydantic schemas before business logic runs:
 ```text
 provider_npi must be exactly 10 digits
 mrn must be exactly 6 digits
-patient_dob must use YYYY-MM-DD when provided
+patient_date_of_birth must use YYYY-MM-DD when provided
 required strings must not be blank
 ```
 

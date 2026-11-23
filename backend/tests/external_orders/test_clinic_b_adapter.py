@@ -52,9 +52,11 @@ def test_clinic_b_adapter_returns_expected_order_create_fields():
 
     order = ClinicBAdapter().normalize(clinic_b_payload())
 
-    assert order.patient_name == "Jane A Smith"
+    assert order.patient_first_name == "Jane"
+    assert order.patient_last_name == "Smith"
+    assert order.patient_middle_name == "A"
     assert order.mrn == "234567"
-    assert order.patient_dob == "1985-03-22"
+    assert order.patient_date_of_birth.isoformat() == "1985-03-22"
     assert order.provider_name == "Dr. Emily Johnson"
     assert order.provider_npi == "0987654321"
     assert order.diagnosis == "G70.00"

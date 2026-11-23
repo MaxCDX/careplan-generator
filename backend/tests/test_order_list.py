@@ -20,8 +20,8 @@ def listing():
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine)()
     provider = Provider(id="provider", name="Fictional Provider", npi="1234567890")
-    john = Patient(id="john", name="John Smith", mrn="123456")
-    alice = Patient(id="alice", name="Alice Jones", mrn="654321")
+    john = Patient(id="john", first_name="John", last_name="Smith", mrn="123456")
+    alice = Patient(id="alice", first_name="Alice", last_name="Jones", mrn="654321")
     db.add_all([provider, john, alice])
     db.flush()
     for i in range(25):
@@ -72,7 +72,7 @@ def test_name_substring_is_case_insensitive_and_trimmed(listing):
     client, _, _ = listing
     body = client.get("/orders", params={"patient_name": "  oHn  "}).json()
     assert body["count"] == 13
-    assert all(row["patient"]["name"] == "John Smith" for row in body["results"])
+    assert all(row["patient"]["first_name"] == "John" for row in body["results"])
 
 
 @pytest.mark.parametrize("name", ["", "   "])
@@ -86,7 +86,7 @@ def test_combined_filters_use_and(listing):
     body = client.get("/orders", params={"status": "completed", "patient_name": "john", "page_size": 2}).json()
     assert body["count"] == 6
     assert len(body["results"]) == 2
-    assert all(row["status"] == "completed" and row["patient"]["name"] == "John Smith" for row in body["results"])
+    assert all(row["status"] == "completed" and row["patient"]["first_name"] == "John" for row in body["results"])
     assert client.get("/orders", params={"status": "failed", "patient_name": "john"}).json()["count"] == 0
 
 
@@ -187,11 +187,11 @@ def test_maximum_page_size_is_allowed(listing):
 
 def test_literal_wildcards_match_names_containing_them(listing):
     client, db, _ = listing
-    db.query(Patient).filter(Patient.id == "john").update({Patient.name: "John %_/ Example"})
+    db.query(Patient).filter(Patient.id == "john").update({Patient.first_name: "John %_/ Example"})
     db.commit()
     body = client.get("/orders", params={"patient_name": "%_/"}).json()
     assert body["count"] == 13
-    assert all(row["patient"]["name"] == "John %_/ Example" for row in body["results"])
+    assert all(row["patient"]["first_name"] == "John %_/ Example" for row in body["results"])
 
 
 def test_combined_filters_and_offset_are_applied_in_sql(listing):
@@ -209,7 +209,7 @@ def test_combined_filters_and_offset_are_applied_in_sql(listing):
     assert len(statements) == 2
     for statement, parameters in statements:
         assert "JOIN patients" in statement
-        assert "orders.status =" in statement and "patients.name" in statement
+        assert "orders.status =" in statement and "patients.first_name" in statement
         assert "completed" in parameters and "%john%" in parameters
     assert statements[1][1][-2:] == (2, 2)
 

@@ -2,7 +2,7 @@ import csv
 from io import StringIO
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
-from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
+from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes
 from app.external_orders.errors import ExternalOrderInputError
 from app.orders.schemas import OrderCreate
 
@@ -25,11 +25,6 @@ class HealthFirstAdapter(BaseIntakeAdapter):
 
     def transform(self, parsed) -> OrderCreate:
         """Transform a parsed HealthFirst row into OrderCreate."""
-        name_parts = [
-            parsed.get("FIRST_NAME", ""),
-            parsed.get("LAST_NAME", ""),
-        ]
-        patient_name = join_nonblank_parts(name_parts)
 
         clinical_note_parts = []
 
@@ -73,8 +68,9 @@ class HealthFirstAdapter(BaseIntakeAdapter):
         clinical_notes = build_clinical_notes(clinical_note_parts)
 
         return OrderCreate(
-            patient_name=patient_name,
-            patient_dob=parsed.get("DOB", ""),
+            patient_first_name=parsed.get("FIRST_NAME", ""),
+            patient_last_name=parsed.get("LAST_NAME", ""),
+            patient_date_of_birth=parsed.get("DOB", ""),
             mrn=parsed.get("PATIENT_NO", ""),
             provider_name=parsed.get("PROVIDER", ""),
             provider_npi=parsed.get("NPI", ""),

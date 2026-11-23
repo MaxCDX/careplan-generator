@@ -23,7 +23,8 @@ class SubmitResult:
 def build_payload(index: int, mrn: str, provider_npi: str) -> dict[str, str]:
     """Build fictional, mock-safe intake data for one order."""
     return {
-        "patient_name": f"Load Test Patient {index}",
+        "patient_first_name": "Load Test",
+        "patient_last_name": f"Patient {index}",
         "mrn": mrn,
         "provider_name": "Dr. Load Test",
         "provider_npi": provider_npi,

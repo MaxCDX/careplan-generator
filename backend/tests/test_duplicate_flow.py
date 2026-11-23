@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from datetime import datetime, timedelta
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
@@ -14,19 +15,7 @@ from app.models import Order, Patient, Provider
 from app.orders import service
 
 
-def order_payload(**overrides):
-    payload = {
-        "patient_name": "Test Patient",
-        "patient_dob": "1979-06-08",
-        "mrn": "123456",
-        "provider_name": "Dr. Test",
-        "provider_npi": "1234567890",
-        "diagnosis": "G70.00",
-        "medication": "IVIG",
-        "clinical_notes": "Fictional clinical note.",
-    }
-    payload.update(overrides)
-    return payload
+from order_test_support import order_payload
 
 
 class FakeGenerateCarePlanTask:
@@ -59,8 +48,8 @@ def close_client(db):
     db.close()
 
 
-def create_patient(db, *, name="Test Patient", mrn="123456", dob="1979-06-08"):
-    patient = Patient(name=name, mrn=mrn, dob=dob)
+def create_patient(db, *, first_name="Test", mrn="123456", dob="1979-06-08"):
+    patient = Patient(first_name=first_name, last_name="Patient", mrn=mrn, date_of_birth=date.fromisoformat(dob) if dob else None)
     db.add(patient)
     db.commit()
     db.refresh(patient)
@@ -160,9 +149,9 @@ def test_patient_same_mrn_same_identity_reuses_patient(monkeypatch):
 def test_patient_same_mrn_mismatched_identity_warns_without_order(monkeypatch):
     client, db = make_client(monkeypatch)
     try:
-        create_patient(db, name="Existing Patient")
+        create_patient(db, first_name="Existing")
 
-        response = client.post("/orders", json=order_payload(patient_name="Different Patient"))
+        response = client.post("/orders", json=order_payload(patient_first_name="Different"))
 
         assert response.status_code == 200
         assert response.json()["status"] == "warning"
@@ -259,9 +248,9 @@ def test_same_patient_same_medication_different_day_proceeds_when_confirm_true(m
 def test_warning_does_not_dispatch_celery(monkeypatch):
     client, db = make_client(monkeypatch)
     try:
-        create_patient(db, name="Existing Patient")
+        create_patient(db, first_name="Existing")
 
-        response = client.post("/orders", json=order_payload(patient_name="Different Patient"))
+        response = client.post("/orders", json=order_payload(patient_first_name="Different"))
 
         assert response.status_code == 200
         assert FakeGenerateCarePlanTask.dispatched_order_ids == []

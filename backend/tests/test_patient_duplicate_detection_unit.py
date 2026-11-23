@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from types import SimpleNamespace
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
@@ -9,8 +10,9 @@ from app.orders.schemas import OrderCreate, WarningResponse
 
 def order_create(**overrides):
     payload = {
-        "patient_name": "Test Patient",
-        "patient_dob": "1979-06-08",
+        "patient_first_name": "Test",
+        "patient_last_name": "Patient",
+        "patient_date_of_birth": "1979-06-08",
         "mrn": "123456",
         "provider_name": "Dr. Test",
         "provider_npi": "1234567890",
@@ -22,8 +24,8 @@ def order_create(**overrides):
     return OrderCreate(**payload)
 
 
-def patient(*, name="Test Patient", mrn="123456", dob="1979-06-08"):
-    return SimpleNamespace(id="patient-1", name=name, mrn=mrn, dob=dob)
+def patient(*, first_name="Test", mrn="123456", dob="1979-06-08"):
+    return SimpleNamespace(id="patient-1", first_name=first_name, last_name="Patient", mrn=mrn, date_of_birth=date.fromisoformat(dob) if dob else None)
 
 
 def order():
@@ -42,8 +44,8 @@ def patch_clean_dependencies(monkeypatch, *, existing_patient=None, same_identit
     created_orders = []
     same_identity_calls = []
 
-    def fake_get_patient_by_name_and_dob(db, *, name, dob):
-        same_identity_calls.append({"name": name, "dob": dob})
+    def fake_get_patient_by_name_and_dob(db, *, first_name, last_name, dob):
+        same_identity_calls.append((first_name, last_name, dob))
         return same_identity_patient
 
     def fake_create_order(db, data):
@@ -79,10 +81,10 @@ def test_existing_same_mrn_same_name_same_dob_proceeds_without_warning(monkeypat
 def test_existing_same_mrn_different_name_returns_warning_without_order_or_dispatch(monkeypatch):
     created_orders, _ = patch_clean_dependencies(
         monkeypatch,
-        existing_patient=patient(name="Existing Patient"),
+        existing_patient=patient(first_name="Existing"),
     )
 
-    result = service.create_order_and_dispatch_care_plan(object(), order_create(patient_name="Different Patient"))
+    result = service.create_order_and_dispatch_care_plan(object(), order_create(patient_first_name="Different"))
 
     assert isinstance(result, WarningResponse)
     assert result.warnings[0].code == "PATIENT_MRN_MISMATCH"
@@ -96,7 +98,7 @@ def test_existing_same_mrn_different_dob_returns_warning_without_order_or_dispat
         existing_patient=patient(dob="1980-01-01"),
     )
 
-    result = service.create_order_and_dispatch_care_plan(object(), order_create(patient_dob="1979-06-08"))
+    result = service.create_order_and_dispatch_care_plan(object(), order_create(patient_date_of_birth="1979-06-08"))
 
     assert isinstance(result, WarningResponse)
     assert result.warnings[0].code == "PATIENT_MRN_MISMATCH"
@@ -117,7 +119,7 @@ def test_same_name_same_dob_different_mrn_returns_warning_without_order_or_dispa
     assert result.warnings[0].code == "PATIENT_POSSIBLE_DUPLICATE"
     assert created_orders == []
     assert FakeGenerateCarePlanTask.dispatched_order_ids == []
-    assert same_identity_calls == [{"name": "Test Patient", "dob": "1979-06-08"}]
+    assert same_identity_calls == [("Test", "Patient", date(1979, 6, 8))]
 
 
 def test_no_existing_mrn_and_no_same_identity_proceeds_normally(monkeypatch):
@@ -132,7 +134,7 @@ def test_no_existing_mrn_and_no_same_identity_proceeds_normally(monkeypatch):
     assert result.id == "order-1"
     assert created_orders == [result]
     assert FakeGenerateCarePlanTask.dispatched_order_ids == ["order-1"]
-    assert same_identity_calls == [{"name": "Test Patient", "dob": "1979-06-08"}]
+    assert same_identity_calls == [("Test", "Patient", date(1979, 6, 8))]
 
 
 def test_missing_dob_does_not_run_same_identity_duplicate_lookup(monkeypatch):
@@ -142,7 +144,7 @@ def test_missing_dob_does_not_run_same_identity_duplicate_lookup(monkeypatch):
         same_identity_patient=patient(mrn="999999", dob=None),
     )
 
-    result = service.create_order_and_dispatch_care_plan(object(), order_create(patient_dob=None))
+    result = service.create_order_and_dispatch_care_plan(object(), order_create(patient_date_of_birth=None))
 
     assert result.id == "order-1"
     assert created_orders == [result]

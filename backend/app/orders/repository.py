@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.orders.models import Order
@@ -13,7 +14,10 @@ def create_order(db: Session, data: OrderCreate) -> Order:
     Reuses existing Patient/Provider rows when MRN/NPI already exist.
     Returns the persisted Order with related Patient/Provider loaded.
     """
-    patient = get_or_create_patient(db, name=data.patient_name, mrn=data.mrn, dob=data.patient_dob)
+    patient = get_or_create_patient(
+        db, first_name=data.patient_first_name, middle_name=data.patient_middle_name,
+        last_name=data.patient_last_name, mrn=data.mrn, dob=data.patient_date_of_birth,
+    )
     provider = get_or_create_provider(db, name=data.provider_name, npi=data.provider_npi)
 
     # Order owns workflow state; CarePlan is created only after generation succeeds.
@@ -64,7 +68,8 @@ def list_orders(
     if cleaned_name:
         # Escape LIKE metacharacters so user input is a literal substring.
         escaped_name = cleaned_name.replace("/", "//").replace("%", "/%").replace("_", "/_")
-        query = query.join(Order.patient).filter(Patient.name.ilike(f"%{escaped_name}%", escape="/"))
+        full_name = Patient.first_name + " " + func.coalesce(Patient.middle_name + " ", "") + Patient.last_name
+        query = query.join(Order.patient).filter(full_name.ilike(f"%{escaped_name}%", escape="/"))
 
     count = query.count()
     orders = (

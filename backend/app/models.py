@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, Date, Numeric, Column, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -19,9 +19,21 @@ class Patient(Base):
     __tablename__ = "patients"
 
     id = Column(String(36), primary_key=True, default=new_uuid)
-    name = Column(String(200), nullable=False)
+    first_name = Column(String(100), nullable=False)
+    middle_name = Column(String(100))
+    last_name = Column(String(100), nullable=False)
     mrn = Column(String(20), nullable=False, unique=True, index=True)
-    dob = Column(String(20), nullable=True)
+    date_of_birth = Column(Date)
+    sex = Column(String(10))
+    weight_kg = Column(Numeric(5, 2))
+    allergies = Column(Text)
+    primary_diagnosis = Column(String(8))
+    additional_diagnoses = Column(JSON, nullable=False, default=list)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    @property
+    def full_name(self):
+        return " ".join(part for part in (self.first_name, self.middle_name, self.last_name) if part)
 
     orders = relationship("Order", back_populates="patient")
 

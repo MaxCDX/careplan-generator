@@ -88,9 +88,11 @@ def test_pharmacorp_adapter_returns_expected_order_create_fields():
 
     order = PharmaCorpAdapter().normalize(pharmacorp_payload())
 
-    assert order.patient_name == "Robert James Williams"
+    assert order.patient_first_name == "Robert"
+    assert order.patient_last_name == "Williams"
+    assert order.patient_middle_name == "James"
     assert order.mrn == "345678"
-    assert order.patient_dob == "1972-11-30"
+    assert order.patient_date_of_birth.isoformat() == "1972-11-30"
     assert order.provider_name == "Dr. Michael Chen"
     assert order.provider_npi == "5678901234"
     assert order.diagnosis == "G70.01"

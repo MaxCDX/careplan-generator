@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
-from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
+from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes
 from app.external_orders.errors import ExternalOrderInputError
 from app.orders.schemas import OrderCreate
 
@@ -26,12 +26,6 @@ class ClinicBAdapter(BaseIntakeAdapter):
         diagnosis_info = parsed.get("dx", {})
         prescription = parsed.get("rx", {})
 
-        name_parts = [
-            patient.get("fname", ""),
-            patient.get("mi", ""),
-            patient.get("lname", ""),
-        ]
-        patient_name = join_nonblank_parts(name_parts)
         patient_mrn = patient.get("mrn", "")
         patient_dob = parse_clinic_b_dob(patient.get("dob"))
         provider_name = provider.get("name", "")
@@ -85,8 +79,10 @@ class ClinicBAdapter(BaseIntakeAdapter):
         clinical_notes = build_clinical_notes(clinical_note_parts)
 
         return OrderCreate(
-            patient_name=patient_name,
-            patient_dob=patient_dob,
+            patient_first_name=patient.get("fname", ""),
+            patient_middle_name=patient.get("mi", ""),
+            patient_last_name=patient.get("lname", ""),
+            patient_date_of_birth=patient_dob,
             mrn=patient_mrn,
             provider_name=provider_name,
             provider_npi=provider_npi,

@@ -5,7 +5,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
-from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
+from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes
 from app.external_orders.errors import ExternalOrderInputError
 from app.orders.schemas import OrderCreate
 
@@ -42,11 +42,6 @@ class EnterpriseSpreadsheetAdapter(BaseIntakeAdapter):
 
     def transform(self, parsed) -> OrderCreate:
         """Transform a parsed Enterprise spreadsheet row into OrderCreate."""
-        name_parts = [
-            parsed.get("First Name", ""),
-            parsed.get("Last Name", ""),
-        ]
-        patient_name = join_nonblank_parts(name_parts)
 
         clinical_note_parts = []
 
@@ -82,8 +77,9 @@ class EnterpriseSpreadsheetAdapter(BaseIntakeAdapter):
         clinical_notes = build_clinical_notes(clinical_note_parts)
 
         return OrderCreate(
-            patient_name=patient_name,
-            patient_dob=_format_spreadsheet_date(parsed.get("Date of Birth")),
+            patient_first_name=parsed.get("First Name", ""),
+            patient_last_name=parsed.get("Last Name", ""),
+            patient_date_of_birth=_format_spreadsheet_date(parsed.get("Date of Birth")),
             mrn=str(parsed.get("Patient ID", "") or ""),
             provider_name=parsed.get("Provider", ""),
             provider_npi=str(parsed.get("Provider NPI", "") or ""),

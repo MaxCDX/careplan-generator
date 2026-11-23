@@ -12,7 +12,7 @@ from app.orders import service
 
 
 def make_order(status="queued"):
-    patient = SimpleNamespace(id="patient-1", name="Test Patient", mrn="123456", dob=None)
+    patient = SimpleNamespace(id="patient-1", first_name="Test", middle_name=None, last_name="Patient", full_name="Test Patient", mrn="123456", date_of_birth=None)
     provider = SimpleNamespace(id="provider-1", name="Dr. Test", npi="1234567890")
     return SimpleNamespace(
         id="order-1",
@@ -42,7 +42,8 @@ def make_completed_order_with_care_plan():
 
 def order_payload():
     return {
-        "patient_name": "Test Patient",
+        "patient_first_name": "Test",
+        "patient_last_name": "Patient",
         "mrn": "123456",
         "provider_name": "Dr. Test",
         "provider_npi": "1234567890",
@@ -66,7 +67,7 @@ def test_create_order_dispatches_celery_task_and_returns_accepted(monkeypatch):
     app.dependency_overrides[get_db] = lambda: object()
     monkeypatch.setattr(service.provider_repository, "get_provider_by_npi", lambda db, npi: None)
     monkeypatch.setattr(service.patient_repository, "get_patient_by_mrn", lambda db, mrn: None)
-    monkeypatch.setattr(service.patient_repository, "get_patient_by_name_and_dob", lambda db, name, dob: None)
+    monkeypatch.setattr(service.patient_repository, "get_patient_by_name_and_dob", lambda db, **kwargs: None)
     monkeypatch.setattr(repository, "create_order", fake_create_order)
     monkeypatch.setattr(service, "generate_care_plan_task", FakeGenerateCarePlanTask)
 
@@ -102,7 +103,7 @@ def test_create_order_marks_order_failed_when_celery_dispatch_fails(monkeypatch)
     app.dependency_overrides[get_db] = lambda: object()
     monkeypatch.setattr(service.provider_repository, "get_provider_by_npi", lambda db, npi: None)
     monkeypatch.setattr(service.patient_repository, "get_patient_by_mrn", lambda db, mrn: None)
-    monkeypatch.setattr(service.patient_repository, "get_patient_by_name_and_dob", lambda db, name, dob: None)
+    monkeypatch.setattr(service.patient_repository, "get_patient_by_name_and_dob", lambda db, **kwargs: None)
     monkeypatch.setattr(repository, "create_order", fake_create_order)
     monkeypatch.setattr(repository, "mark_order_failed", fake_mark_failed)
     monkeypatch.setattr(service, "generate_care_plan_task", FakeGenerateCarePlanTask)

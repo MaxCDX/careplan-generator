@@ -11,8 +11,10 @@ import { submitOrder } from '../lib/api'
 import type { FormData, OrderSubmitResponse, QueuedOrder, WarningOrderResponse } from '../types/orders'
 
 const initialFormData: FormData = {
-  patient_name: '',
-  patient_dob: '',
+  patient_first_name: '',
+  patient_middle_name: '',
+  patient_last_name: '',
+  patient_date_of_birth: '',
   mrn: '',
   provider_name: '',
   provider_npi: '',
