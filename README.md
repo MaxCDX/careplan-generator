@@ -354,7 +354,27 @@ Possible `POST /orders` responses:
 → Order was created but the queue dispatch failed
 ```
 
-Patient registration uses `POST /patients`. Required fields are first_name, last_name,
+Order clients upgrading from the single-name contract must replace `patient_name`
+and `patient_dob` in submission bodies with the structured fields above.
+`GET /orders?patient_name=...` still searches the full display name.
+
+### `POST /patients`
+
+Register a Patient independently of an Order. For example:
+
+```json
+{
+  "first_name": "John",
+  "middle_name": "A.",
+  "last_name": "Smith",
+  "mrn": "001234",
+  "date_of_birth": "1979-06-08",
+  "primary_diagnosis": "G70.00",
+  "additional_diagnoses": ["I10"]
+}
+```
+
+Required fields are first_name, last_name,
 mrn (six digits as a string) and primary_diagnosis (ICD-10 format). An optional
 middle_name may be omitted, null or blank. Optional fields include date_of_birth
 (YYYY-MM-DD), sex (Female/Male/Other), positive weight_kg, allergies and a list of
@@ -362,14 +382,16 @@ additional_diagnoses. Registration returns 201 with the stored fields, UUID and
 created_at. Invalid input returns 400. An existing MRN or exact first and last
 names with a matching known birth date returns 409 with detail.existing_patient_id.
 MRN takes precedence; identity matching ignores middle_name. Order submission
-retains its separate reuse and confirmable-warning behavior.
+retains its separate reuse and confirmable-warning behavior. The conflict code is
+`PATIENT_MRN_CONFLICT` for an existing MRN and `PATIENT_IDENTITY_CONFLICT` for
+a name and DOB match under a different MRN. If DOB is absent, only MRN is checked.
 
 This schema replaces the old single-name layout. Existing development databases
 require a schema reset before startup; resetting deletes local records. create_all does not alter
 existing tables. Verify the local DB target and its postgres_data volume before
 removing data. Preserve Prometheus and Grafana volumes.
 
-Current endpoints:
+### Current endpoints
 
 ```text
 POST /patients
