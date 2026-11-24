@@ -33,32 +33,7 @@ Frontend form
 → return HTTP 202 Accepted immediately
 ```
 
-Order submission can return four intentional outcomes:
-
-```text
-400 Bad Request
-→ request format is invalid, such as invalid NPI, MRN, DOB, or blank required fields
-
-409 Conflict
-→ business rule blocks the request, such as provider NPI conflict or same-day duplicate order
-
-200 OK with warning
-→ request may be valid but needs user confirmation, such as possible duplicate patient or different-day duplicate order
-
-202 Accepted
-→ request is accepted, Order is queued, and background generation starts
-```
-
-Warning confirmation flow:
-
-```text
-Backend returns warning
-→ frontend shows warning panel
-→ user can cancel and keep editing
-→ user can continue anyway
-→ frontend resubmits the same form with confirm=true
-→ backend creates the Order and dispatches Celery
-```
+See [order validation and duplicate rules](#validation-duplicate-detection-and-warnings) for the warning confirmation flow.
 
 Frontend starts polling GET /orders/{id}/status every 3 seconds.
 
@@ -315,7 +290,7 @@ This structure keeps related code close together while still separating HTTP bou
 
 ### `POST /orders`
 
-Creates a durable async workflow request, dispatches a Celery background task, and immediately returns HTTP 202 Accepted.
+Submit an order. A successful `202 Accepted` response includes the order ID for polling `GET /orders/{order_id}/status`.
 
 ```json
 {
@@ -333,26 +308,7 @@ Creates a durable async workflow request, dispatches a Celery background task, a
 }
 ```
 
-`confirm` is used only after the backend returns a warning. A clean first submission should use `false` or omit it.
-
-Possible `POST /orders` responses:
-
-```text
-202 Accepted
-→ Order created and queued for background generation
-
-200 OK
-→ warning response requiring user confirmation before Order creation
-
-400 Bad Request
-→ request validation failed
-
-409 Conflict
-→ business rule blocked the request
-
-503 Service Unavailable
-→ Order was created but the queue dispatch failed
-```
+A `200` warning means the Order has not been created. After reviewing the warning, resubmit with `confirm=true` to continue.
 
 Order clients upgrading from the single-name contract must replace `patient_name`
 and `patient_dob` in submission bodies with the structured fields above.
@@ -360,31 +316,7 @@ and `patient_dob` in submission bodies with the structured fields above.
 
 ### `POST /patients`
 
-Register a Patient independently of an Order. For example:
-
-```json
-{
-  "first_name": "John",
-  "middle_name": "A.",
-  "last_name": "Smith",
-  "mrn": "001234",
-  "date_of_birth": "1979-06-08",
-  "primary_diagnosis": "G70.00",
-  "additional_diagnoses": ["I10"]
-}
-```
-
-Required fields are first_name, last_name,
-mrn (six digits as a string) and primary_diagnosis (ICD-10 format). An optional
-middle_name may be omitted, null or blank. Optional fields include date_of_birth
-(YYYY-MM-DD), sex (Female/Male/Other), positive weight_kg, allergies and a list of
-additional_diagnoses. Registration returns 201 with the stored fields, UUID and
-created_at. Invalid input returns 400. An existing MRN or exact first and last
-names with a matching known birth date returns 409 with detail.existing_patient_id.
-MRN takes precedence; identity matching ignores middle_name. Order submission
-retains its separate reuse and confirmable-warning behavior. The conflict code is
-`PATIENT_MRN_CONFLICT` for an existing MRN and `PATIENT_IDENTITY_CONFLICT` for
-a name and DOB match under a different MRN. If DOB is absent, only MRN is checked.
+Register a patient with `first_name`, `last_name`, a six-digit `mrn` string, and `primary_diagnosis`. Success returns `201` with the patient UUID. An existing MRN or a matching first name, last name and known birth date returns `409` with `detail.existing_patient_id`.
 
 This schema replaces the old single-name layout. Existing development databases
 require a schema reset before startup; resetting deletes local records. create_all does not alter
@@ -393,68 +325,27 @@ removing data. Preserve Prometheus and Grafana volumes.
 
 ### `GET /patients`
 
-`GET /patients?page=1&page_size=20&search=Smith` searches the full name,
-including an optional middle name, for a case-insensitive literal substring.
-Blank search text selects all patients. Pages start at 1; the default page size
-is 20 and the allowed range is 1–100. Invalid parameters return HTTP 400.
+List patients or search by full name, e.g. `GET /patients?search=Smith&page=1&page_size=20`.
+The response includes the total match count and a page of patient summaries with `full_name`.
 
-The response contains `count` (matching patients before pagination), `page`,
-`page_size`, and `results`. Items contain id, first_name, last_name,
-full_name (including the middle name when present), mrn,
-primary_diagnosis (nullable), and created_at, sorted by last name, first name,
-then UUID ascending. Empty or out-of-range pages return HTTP 200 with empty results.
+### Other endpoints
 
-### Current endpoints
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /external-orders/{source}` | Submit a partner payload through the same Order workflow. |
+| `GET /orders/{order_id}` | Read one Order with patient and provider details. |
+| `GET /orders/{order_id}/status` | Poll background generation status. |
+| `GET /care-plans` · `GET /care-plans/{care_plan_id}` | List or retrieve generated care plans. |
 
-```text
-POST /patients
-GET /patients
-POST /orders
-POST /external-orders/{source}
-GET /orders
-GET /orders/{order_id}
-GET /orders/{order_id}/status
-GET /care-plans
-GET /care-plans/{care_plan_id}
-```
-
-`POST /orders` and `POST /external-orders/{source}` both enter the same asynchronous Order workflow. Care plans are generated only by the Celery worker; the CarePlan API is read-only.
+See [interactive API docs](http://localhost:8000/docs) for request and response schemas when running locally.
 
 ---
 
 ## Orders List Pagination and Filtering
 
-`GET /orders` returns a paginated envelope. For example, 358 matching Orders
-fill 18 pages at 20 per page. A request for page 19 returns:
+`GET /orders?status=failed&patient_name=John` lists matching orders, newest first. Both filters are optional and can be combined.
 
-```json
-{"count": 358, "page": 19, "page_size": 20, "results": []}
-```
-
-`results` contains the existing `OrderRead` representation, including nested
-patient/provider data and the existing care-plan content behavior.
-
-| Query parameter | Default | Behavior |
-| --- | --- | --- |
-| `page` | `1` | Integer, minimum 1 |
-| `page_size` | `20` | Integer, between 1 and 100 |
-| `status` | Omitted | Exactly `queued`, `processing`, `completed`, or `failed` |
-| `patient_name` | Omitted | Case-insensitive literal substring of the patient’s full name |
-
-Patient-name input is trimmed; empty or whitespace-only input disables that
-filter. `%` and `_` are treated as literal characters. Multiple filters use AND.
-For example, `/orders?page=2&page_size=20&status=failed&patient_name=John` selects
-failed Orders whose related patient name contains John, ignoring case.
-
-Filtering, counting, and pagination run in the database. `count` is the total
-matching Order count before pagination. Results sort by `created_at DESC`, then
-`id DESC`. No matches or a page beyond the results returns HTTP 200 with an empty
-`results` array; the requested page and real total count are preserved.
-Invalid query parameters return the existing HTTP 400 `VALIDATION_ERROR` envelope.
-
-Callers that previously consumed an array must now read `results` and request
-additional pages as needed. The existing frontend uses submission and status
-endpoints and does not consume this list endpoint.
+Both patient and order lists return `{count, page, page_size, results}`. `count` is the filtered total before pagination. Pages start at 1, default to 20 items, and allow up to 100 items. A page past the last match returns an empty `results` array.
 
 ---
 
