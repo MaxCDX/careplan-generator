@@ -1,10 +1,42 @@
 from datetime import date
 
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, load_only
 from sqlalchemy.exc import IntegrityError
 
 from app.patients.models import Patient
 from app.patients.schemas import PatientCreate
+
+
+def full_name_contains(search: str):
+    """SQL predicate for a literal substring of a patient's display name."""
+    escaped = search.replace("/", "//").replace("%", "/%").replace("_", "/_")
+    full_name = Patient.first_name + " " + func.coalesce(Patient.middle_name + " ", "") + Patient.last_name
+    return full_name.ilike(f"%{escaped}%", escape="/")
+
+
+def list_patients(db: Session, *, page: int, page_size: int, search: str | None) -> tuple[int, list[Patient]]:
+    query = db.query(Patient)
+    term = (search or "").strip()
+    if term:
+        query = query.filter(full_name_contains(term))
+
+    count = query.with_entities(func.count(Patient.id)).scalar()
+    offset = (page - 1) * page_size
+    if offset >= count:
+        return count, []
+
+    patients = (
+        query.options(load_only(
+            Patient.id, Patient.first_name, Patient.middle_name, Patient.last_name, Patient.mrn,
+            Patient.primary_diagnosis, Patient.created_at,
+        ))
+        .order_by(Patient.last_name, Patient.first_name, Patient.id)
+        .limit(page_size)
+        .offset(offset)
+        .all()
+    )
+    return count, patients
 
 
 def insert_patient(db: Session, data: PatientCreate) -> Patient:

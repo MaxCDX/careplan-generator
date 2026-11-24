@@ -391,10 +391,24 @@ require a schema reset before startup; resetting deletes local records. create_a
 existing tables. Verify the local DB target and its postgres_data volume before
 removing data. Preserve Prometheus and Grafana volumes.
 
+### `GET /patients`
+
+`GET /patients?page=1&page_size=20&search=Smith` searches the full name,
+including an optional middle name, for a case-insensitive literal substring.
+Blank search text selects all patients. Pages start at 1; the default page size
+is 20 and the allowed range is 1–100. Invalid parameters return HTTP 400.
+
+The response contains `count` (matching patients before pagination), `page`,
+`page_size`, and `results`. Items contain id, first_name, last_name,
+full_name (including the middle name when present), mrn,
+primary_diagnosis (nullable), and created_at, sorted by last name, first name,
+then UUID ascending. Empty or out-of-range pages return HTTP 200 with empty results.
+
 ### Current endpoints
 
 ```text
 POST /patients
+GET /patients
 POST /orders
 POST /external-orders/{source}
 GET /orders

@@ -69,3 +69,20 @@ class PatientCreated(PatientRead):
     primary_diagnosis: str
     additional_diagnoses: list[str]
     created_at: datetime
+
+
+class PatientListItem(BaseModel):
+    id: str
+    first_name: str
+    last_name: str
+    full_name: str
+    mrn: str
+    primary_diagnosis: str | None
+    created_at: datetime
+
+
+class PatientListResponse(BaseModel):
+    count: int
+    page: int
+    page_size: int
+    results: list[PatientListItem]

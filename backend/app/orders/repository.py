@@ -1,10 +1,8 @@
-from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.orders.models import Order
 from app.orders.schemas import OrderCreate
-from app.patients.models import Patient
-from app.patients.repository import get_or_create_patient
+from app.patients.repository import full_name_contains, get_or_create_patient
 from app.providers.repository import get_or_create_provider
 
 
@@ -66,10 +64,7 @@ def list_orders(
         query = query.filter(Order.status == order_status)
     cleaned_name = patient_name.strip() if patient_name is not None else ""
     if cleaned_name:
-        # Escape LIKE metacharacters so user input is a literal substring.
-        escaped_name = cleaned_name.replace("/", "//").replace("%", "/%").replace("_", "/_")
-        full_name = Patient.first_name + " " + func.coalesce(Patient.middle_name + " ", "") + Patient.last_name
-        query = query.join(Order.patient).filter(full_name.ilike(f"%{escaped_name}%", escape="/"))
+        query = query.join(Order.patient).filter(full_name_contains(cleaned_name))
 
     count = query.count()
     orders = (

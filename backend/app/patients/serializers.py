@@ -1,5 +1,17 @@
 from app.patients.models import Patient
-from app.patients.schemas import PatientCreated, PatientRead
+from app.patients.schemas import PatientCreated, PatientListItem, PatientRead
+
+
+def serialize_patient_list_item(patient: Patient) -> PatientListItem:
+    return PatientListItem(
+        id=patient.id,
+        first_name=patient.first_name,
+        last_name=patient.last_name,
+        full_name=patient.full_name,
+        mrn=patient.mrn,
+        primary_diagnosis=patient.primary_diagnosis,
+        created_at=patient.created_at,
+    )
 
 
 def serialize_patient(patient: Patient) -> PatientRead:
