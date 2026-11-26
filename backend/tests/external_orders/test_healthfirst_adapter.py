@@ -30,9 +30,11 @@ def test_healthfirst_adapter_returns_expected_order_create_fields():
 
     order = HealthFirstAdapter().normalize(healthfirst_payload())
 
-    assert order.patient_name == "Maria Garcia"
+    assert order.patient_first_name == "Maria"
+    assert order.patient_last_name == "Garcia"
+    assert order.patient_middle_name is None
     assert order.mrn == "567890"
-    assert order.patient_dob == "1988-06-15"
+    assert order.patient_date_of_birth.isoformat() == "1988-06-15"
     assert order.provider_npi == "2233445566"
     assert order.diagnosis == "G35"
     assert order.medication == "Ocrevus"

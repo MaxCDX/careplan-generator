@@ -13,6 +13,7 @@ from app.care_plans.routes import router as care_plans_router
 from app.database import init_db
 from app.exceptions import BaseAppException
 from app.external_orders.routes import router as external_orders_router
+from app.patients.routes import router as patients_router
 from app.orders.routes import router as orders_router
 
 load_dotenv()
@@ -51,13 +52,19 @@ async def app_exception_handler(request, exc: BaseAppException):
 async def request_validation_exception_handler(request, exc):
     """Return Bad Request for malformed client input in this learning project."""
     logging.info("Request validation error handled: error_count=%s", len(exc.errors()))
+    errors = exc.errors()
+    if request.url.path == "/patients" or (
+        request.method == "PUT" and request.url.path.startswith("/patients/")
+    ):
+        # Registration inputs can contain clinical data, including the entire body.
+        errors = [{key: error[key] for key in ("loc", "msg", "type")} for error in errors]
     return JSONResponse(
         status_code=400,
         content={
             "status": "error",
             "code": "VALIDATION_ERROR",
             "message": "Invalid request input.",
-            "detail": jsonable_encoder(exc.errors()),
+            "detail": jsonable_encoder(errors),
         },
     )
 
@@ -72,6 +79,7 @@ app.add_middleware(
 
 
 # Keep main.py focused on application wiring; domain endpoints live in routers.
+app.include_router(patients_router)
 app.include_router(orders_router)
 app.include_router(care_plans_router)
 app.include_router(external_orders_router)

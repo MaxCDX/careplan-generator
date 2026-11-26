@@ -18,7 +18,7 @@ If a field is unavailable, use an explicit placeholder such as [NOT PROVIDED].
 
 Available information:
 - Generated date: {today}
-- Patient name: {order.patient.name or "[NOT PROVIDED]"}
+- Patient name: {order.patient.full_name or "[NOT PROVIDED]"}
 - Patient MRN: {order.patient.mrn or "[NOT PROVIDED]"}
 - Medication: {order.medication or "[NOT PROVIDED]"}
 - Referring provider: {order.provider.name or "[NOT PROVIDED]"}
@@ -45,7 +45,7 @@ Output requirements:
 
 SPECIALTY PHARMACY CARE PLAN
 Generated: {today}
-Patient: {order.patient.name or "[NOT PROVIDED]"} (MRN: {order.patient.mrn or "[NOT PROVIDED]"})
+Patient: {order.patient.full_name or "[NOT PROVIDED]"} (MRN: {order.patient.mrn or "[NOT PROVIDED]"})
 Medication: {order.medication or "[NOT PROVIDED]"}
 Referring Provider: {order.provider.name or "[NOT PROVIDED]"} (NPI: {order.provider.npi or "[NOT PROVIDED]"})
 

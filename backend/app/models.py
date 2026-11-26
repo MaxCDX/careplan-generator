@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -19,11 +19,49 @@ class Patient(Base):
     __tablename__ = "patients"
 
     id = Column(String(36), primary_key=True, default=new_uuid)
-    name = Column(String(200), nullable=False)
+    first_name = Column(String(100), nullable=False)
+    middle_name = Column(String(100))
+    last_name = Column(String(100), nullable=False)
     mrn = Column(String(20), nullable=False, unique=True, index=True)
-    dob = Column(String(20), nullable=True)
+    date_of_birth = Column(Date)
+    sex = Column(String(10))
+    weight_kg = Column(Numeric(5, 2))
+    allergies = Column(Text)
+    primary_diagnosis = Column(String(8))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    @property
+    def full_name(self):
+        return " ".join(part for part in (self.first_name, self.middle_name, self.last_name) if part)
 
     orders = relationship("Order", back_populates="patient")
+    diagnoses = relationship("PatientDiagnosis", back_populates="patient",
+                             order_by="PatientDiagnosis.position", cascade="all, delete-orphan")
+    medication_history = relationship("MedicationHistory", back_populates="patient",
+                                      order_by="MedicationHistory.position", cascade="all, delete-orphan")
+
+
+class PatientDiagnosis(Base):
+    __tablename__ = "patient_diagnoses"
+    __table_args__ = (UniqueConstraint("patient_id", "position"),)
+
+    id = Column(String(36), primary_key=True, default=new_uuid)
+    patient_id = Column(String(36), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
+    icd10_code = Column(String(8), nullable=False)
+    position = Column(Integer, nullable=False)
+    patient = relationship("Patient", back_populates="diagnoses")
+
+
+class MedicationHistory(Base):
+    __tablename__ = "medication_history"
+    __table_args__ = (UniqueConstraint("patient_id", "position"),)
+
+    id = Column(String(36), primary_key=True, default=new_uuid)
+    patient_id = Column(String(36), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False)
+    medication_text = Column(Text, nullable=False)
+    position = Column(Integer, nullable=False)
+    patient = relationship("Patient", back_populates="medication_history")
 
 
 class Provider(Base):
@@ -53,7 +91,7 @@ class Order(Base):
     medication = Column(String(200), nullable=False)
     diagnosis = Column(String(500), nullable=False)
     clinical_notes = Column(Text, nullable=False)
-    status = Column(String(30), nullable=False, default="pending", index=True)
+    status = Column(String(30), nullable=False, default="queued", index=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

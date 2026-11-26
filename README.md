@@ -33,32 +33,7 @@ Frontend form
 → return HTTP 202 Accepted immediately
 ```
 
-Order submission can return four intentional outcomes:
-
-```text
-400 Bad Request
-→ request format is invalid, such as invalid NPI, MRN, DOB, or blank required fields
-
-409 Conflict
-→ business rule blocks the request, such as provider NPI conflict or same-day duplicate order
-
-200 OK with warning
-→ request may be valid but needs user confirmation, such as possible duplicate patient or different-day duplicate order
-
-202 Accepted
-→ request is accepted, Order is queued, and background generation starts
-```
-
-Warning confirmation flow:
-
-```text
-Backend returns warning
-→ frontend shows warning panel
-→ user can cancel and keep editing
-→ user can continue anyway
-→ frontend resubmits the same form with confirm=true
-→ backend creates the Order and dispatches Celery
-```
+See [order validation and duplicate rules](#validation-duplicate-detection-and-warnings) for the warning confirmation flow.
 
 Frontend starts polling GET /orders/{id}/status every 3 seconds.
 
@@ -124,7 +99,7 @@ Partner integrations submit source-specific payloads to `POST /external-orders/{
       │                │                │                │
       │                │                │ 5. Save result │
       │                │                │◀───────────────│
-      │                │                │ status=done    │
+      │                │                │status=completed│
       │                │                │                │
       │ 6. Poll status │                │                │
       │───────────────▶│ 7. Get status  │                │
@@ -139,7 +114,7 @@ Partner integrations submit source-specific payloads to `POST /external-orders/{
       │───────────────▶│10. Get status  │                │
       │                │───────────────▶│                │
       │                │◀───────────────│                │
-      │11. Return done │                │                │
+      │11. Completed   │                │                │
       │◀───────────────│                │                │
       │                │                │                │
       │12. Render      │                │                │
@@ -226,9 +201,9 @@ Business workflow code remains provider-agnostic.
 │   Patient    │        │   Provider   │
 ├──────────────┤        ├──────────────┤
 │ id           │        │ id           │
-│ name         │        │ name         │
+│ first_name   │        │ name         │
 │ mrn          │        │ npi          │
-│ dob          │        └──────┬───────┘
+│ last_name    │        └──────┬───────┘
 └──────┬───────┘               │
        │                       │
        ▼                       ▼
@@ -263,11 +238,13 @@ Relationship summary:
 
 ```text
 Patient  1 → many Orders
+Patient  1 → many PatientDiagnosis rows (additional ICD-10 codes)
+Patient  1 → many MedicationHistory rows (medication text)
 Provider 1 → many Orders
 Order    1 → zero or one CarePlan
 ```
 
-`Order` owns workflow state. `CarePlan` owns generated output. Status belongs on `Order` because `pending`, `processing`, and `failed` can happen before a care plan exists.
+`Order` owns workflow state. `CarePlan` owns generated output. Status belongs on `Order` because `queued`, `processing`, and `failed` can happen before a care plan exists.
 
 ---
 
@@ -315,12 +292,14 @@ This structure keeps related code close together while still separating HTTP bou
 
 ### `POST /orders`
 
-Creates a durable async workflow request, dispatches a Celery background task, and immediately returns HTTP 202 Accepted.
+Submit an order. A successful `202 Accepted` response includes the order ID for polling `GET /orders/{order_id}/status`.
 
 ```json
 {
-  "patient_name": "Example Patient",
-  "patient_dob": "1980-01-01",
+  "patient_first_name": "Example",
+  "patient_middle_name": null,
+  "patient_last_name": "Patient",
+  "patient_date_of_birth": "1980-01-01",
   "mrn": "123456",
   "provider_name": "Dr. Example Provider",
   "provider_npi": "0000000000",
@@ -331,40 +310,47 @@ Creates a durable async workflow request, dispatches a Celery background task, a
 }
 ```
 
-`confirm` is used only after the backend returns a warning. A clean first submission should use `false` or omit it.
+A `200` warning means the Order has not been created. After reviewing the warning, resubmit with `confirm=true` to continue.
 
-Possible `POST /orders` responses:
+Order clients upgrading from the single-name contract must replace `patient_name`
+and `patient_dob` in submission bodies with the structured fields above.
+`GET /orders?patient_name=...` still searches the full display name.
 
-```text
-202 Accepted
-→ Order created and queued for background generation
+### `POST /patients`
 
-200 OK
-→ warning response requiring user confirmation before Order creation
+Register a patient with `first_name`, `last_name`, a six-digit `mrn` string, and `primary_diagnosis`. Success returns `201` with the patient UUID. An existing MRN or a matching first name, last name and known birth date returns `409` with `detail.existing_patient_id`.
 
-400 Bad Request
-→ request validation failed
+This schema replaces the old single-name layout. Existing development databases
+require a schema reset before startup; resetting deletes local records. create_all does not alter
+existing tables. Verify the local DB target and its postgres_data volume before
+removing data. Preserve Prometheus and Grafana volumes.
 
-409 Conflict
-→ business rule blocked the request
+### `GET /patients`
 
-503 Service Unavailable
-→ Order was created but the queue dispatch failed
-```
+List patients or search by full name, e.g. `GET /patients?search=Smith&page=1&page_size=20`.
+The response includes the total match count and a page of patient summaries with `full_name`.
 
-Current endpoints:
+### Other endpoints
 
-```text
-POST /orders
-POST /external-orders/{source}
-GET /orders
-GET /orders/{order_id}
-GET /orders/{order_id}/status
-GET /care-plans
-GET /care-plans/{care_plan_id}
-```
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /patients/{patient_id}` | Read a patient profile with additional diagnoses, medication history, and order summaries (newest first). |
+| `PUT /patients/{patient_id}` | Update supplied fields, e.g. `{"weight_kg":75}`. MRN is immutable. Supplied diagnosis and medication lists replace their previous contents; `[]` clears them. Returns an update summary with `updated_at`. |
+| `DELETE /patients/{patient_id}` | Delete a patient with no orders and their diagnosis and medication rows (204). Active orders return 409 with `detail.active_orders`; historical orders also block deletion. An unknown patient returns 404. |
+| `POST /external-orders/{source}` | Submit a partner payload through the same Order workflow. |
+| `GET /orders/{order_id}` | Read one Order with patient and provider details. |
+| `GET /orders/{order_id}/status` | Poll background generation status. |
+| `GET /care-plans` · `GET /care-plans/{care_plan_id}` | List or retrieve generated care plans. |
 
-`POST /orders` and `POST /external-orders/{source}` both enter the same asynchronous Order workflow. Care plans are generated only by the Celery worker; the CarePlan API is read-only.
+See [interactive API docs](http://localhost:8000/docs) for request and response schemas when running locally.
+
+---
+
+## Orders List Pagination and Filtering
+
+`GET /orders?status=failed&patient_name=John` lists matching orders, newest first. Both filters are optional and can be combined.
+
+Both patient and order lists return `{count, page, page_size, results}`. `count` is the filtered total before pagination. Pages start at 1, default to 20 items, and allow up to 100 items. A page past the last match returns an empty `results` array.
 
 ---
 
@@ -377,7 +363,7 @@ Validation checks happen in Pydantic schemas before business logic runs:
 ```text
 provider_npi must be exactly 10 digits
 mrn must be exactly 6 digits
-patient_dob must use YYYY-MM-DD when provided
+patient_date_of_birth must use YYYY-MM-DD when provided
 required strings must not be blank
 ```
 
@@ -516,7 +502,7 @@ cd backend
 PYTHONPATH=. pytest tests
 ```
 
-The current backend suite contains 82 passing tests covering validation, duplicate detection, warning and conflict flows, external adapters, LLM providers, Celery processing, API integration, and metrics behavior.
+The backend suite covers validation, duplicate detection, warning and conflict flows, external adapters, LLM providers, Celery processing, API integration, and metrics behavior. Orders list tests cover database filtering, filtered totals, page boundaries, and deterministic ordering.
 
 ---
 

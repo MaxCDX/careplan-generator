@@ -5,7 +5,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 
 def make_order():
-    patient = SimpleNamespace(name="Test Patient", mrn="123456")
+    patient = SimpleNamespace(full_name="Test Patient", mrn="123456")
     provider = SimpleNamespace(name="Dr. Test", npi="1234567890")
     return SimpleNamespace(
         patient=patient,

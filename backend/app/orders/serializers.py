@@ -1,6 +1,6 @@
 from app.orders.models import Order
 from app.orders.schemas import OrderRead, OrderStatusRead
-from app.patients.schemas import PatientRead
+from app.patients.serializers import serialize_patient
 from app.providers.schemas import ProviderRead
 
 
@@ -14,12 +14,7 @@ def serialize_order(order: Order) -> OrderRead:
 
     return OrderRead(
         id=order.id,
-        patient=PatientRead(
-            id=order.patient.id,
-            name=order.patient.name,
-            mrn=order.patient.mrn,
-            dob=order.patient.dob,
-        ),
+        patient=serialize_patient(order.patient),
         provider=ProviderRead(
             id=order.provider.id,
             name=order.provider.name,

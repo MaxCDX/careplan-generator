@@ -15,8 +15,9 @@ from app.orders import service
 
 def order_payload(**overrides):
     payload = {
-        "patient_name": "Test Patient",
-        "patient_dob": "1979-06-08",
+        "patient_first_name": "Test",
+        "patient_last_name": "Patient",
+        "patient_date_of_birth": "1979-06-08",
         "mrn": "123456",
         "provider_name": "Dr. Test",
         "provider_npi": "1234567890",
@@ -131,7 +132,7 @@ def test_invalid_patient_mrn_too_long_returns_400_without_order_or_dispatch(monk
 def test_whitespace_required_string_field_returns_400_without_order_or_dispatch(monkeypatch):
     client, db = make_client(monkeypatch)
     try:
-        response = client.post("/orders", json=order_payload(patient_name="   "))
+        response = client.post("/orders", json=order_payload(patient_first_name="   "))
 
         assert_invalid_request_does_not_create_order_or_dispatch(response, db)
     finally:
@@ -158,10 +159,10 @@ def test_blank_medication_returns_400_without_order_or_dispatch(monkeypatch):
         close_client(db)
 
 
-def test_invalid_patient_dob_returns_400_without_order_or_dispatch(monkeypatch):
+def test_invalid_patient_date_of_birth_returns_400_without_order_or_dispatch(monkeypatch):
     client, db = make_client(monkeypatch)
     try:
-        response = client.post("/orders", json=order_payload(patient_dob="not-a-date"))
+        response = client.post("/orders", json=order_payload(patient_date_of_birth="not-a-date"))
 
         assert_invalid_request_does_not_create_order_or_dispatch(response, db)
     finally:

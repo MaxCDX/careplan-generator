@@ -1,6 +1,8 @@
 export type FormData = {
-  patient_name: string
-  patient_dob: string
+  patient_first_name: string
+  patient_middle_name: string
+  patient_last_name: string
+  patient_date_of_birth: string
   mrn: string
   provider_name: string
   provider_npi: string

@@ -66,9 +66,11 @@ def test_enterprise_spreadsheet_adapter_returns_expected_order_create_fields(tmp
 
     order = EnterpriseSpreadsheetAdapter().normalize(enterprise_spreadsheet_payload(tmp_path))
 
-    assert order.patient_name == "Lena Patel"
+    assert order.patient_first_name == "Lena"
+    assert order.patient_last_name == "Patel"
+    assert order.patient_middle_name is None
     assert order.mrn == "678901"
-    assert order.patient_dob == "1990-04-12"
+    assert order.patient_date_of_birth.isoformat() == "1990-04-12"
     assert order.provider_npi == "3344556677"
     assert order.diagnosis == "M06.9"
     assert order.medication == "Humira"

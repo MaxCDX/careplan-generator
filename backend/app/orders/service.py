@@ -33,18 +33,23 @@ def create_order_and_dispatch_care_plan(db: Session, data: OrderCreate) -> Order
     warnings = []
 
     if patient:
-        if patient.name != data.patient_name or patient.dob != data.patient_dob:
+        if (
+            patient.first_name != data.patient_first_name
+            or patient.last_name != data.patient_last_name
+            or patient.date_of_birth != data.patient_date_of_birth
+        ):
             warnings.append(
                 {
                     "code": "PATIENT_MRN_MISMATCH",
                     "message": "Patient MRN exists but name or DOB is different.",
                 }
             )
-    elif data.patient_dob:
+    elif data.patient_date_of_birth:
         same_identity_patient = patient_repository.get_patient_by_name_and_dob(
             db,
-            name=data.patient_name,
-            dob=data.patient_dob,
+            first_name=data.patient_first_name,
+            last_name=data.patient_last_name,
+            dob=data.patient_date_of_birth,
         )
         if same_identity_patient and same_identity_patient.mrn != data.mrn:
             warnings.append(

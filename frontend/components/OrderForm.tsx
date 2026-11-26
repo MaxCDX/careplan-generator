@@ -12,8 +12,10 @@ type OrderFormProps = {
 type FormFieldName = Exclude<keyof FormData, 'confirm'>
 
 const fields: Array<{ name: FormFieldName; label: string; multiline?: boolean; type?: string }> = [
-  { name: 'patient_name', label: 'Patient name' },
-  { name: 'patient_dob', label: 'Patient date of birth', type: 'date' },
+  { name: 'patient_first_name', label: 'First name' },
+  { name: 'patient_middle_name', label: 'Middle name (optional)' },
+  { name: 'patient_last_name', label: 'Last name' },
+  { name: 'patient_date_of_birth', label: 'Patient date of birth', type: 'date' },
   { name: 'mrn', label: 'MRN' },
   { name: 'provider_name', label: 'Provider name' },
   { name: 'provider_npi', label: 'Provider NPI' },

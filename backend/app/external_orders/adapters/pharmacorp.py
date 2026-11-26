@@ -2,7 +2,7 @@ from xml.etree import ElementTree
 from xml.etree.ElementTree import Element
 
 from app.external_orders.adapters.base import BaseIntakeAdapter
-from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes, join_nonblank_parts
+from app.external_orders.adapters.utils import append_note_if_present, build_clinical_notes
 from app.external_orders.errors import ExternalOrderInputError
 from app.orders.schemas import OrderCreate
 
@@ -28,12 +28,6 @@ class PharmaCorpAdapter(BaseIntakeAdapter):
         Validation, duplicate detection, and workflow dispatch stay in the existing
         OrderCreate and order service layers.
         """
-        name_parts = [
-            require_xml_text(root, "./PatientInformation/PatientName/FirstName"),
-            root.findtext("./PatientInformation/PatientName/MiddleName", default=""),
-            require_xml_text(root, "./PatientInformation/PatientName/LastName"),
-        ]
-        patient_name = join_nonblank_parts(name_parts)
         mrn = require_xml_text(root, "./PatientInformation/MedicalRecordNumber")
         patient_dob = require_xml_text(root, "./PatientInformation/DateOfBirth")
         provider_name = require_xml_text(root, "./PrescriberInformation/FullName")
@@ -145,8 +139,10 @@ class PharmaCorpAdapter(BaseIntakeAdapter):
         clinical_notes = build_clinical_notes(clinical_note_parts)
 
         return OrderCreate(
-            patient_name=patient_name,
-            patient_dob=patient_dob,
+            patient_first_name=require_xml_text(root, "./PatientInformation/PatientName/FirstName"),
+            patient_middle_name=root.findtext("./PatientInformation/PatientName/MiddleName", default=""),
+            patient_last_name=require_xml_text(root, "./PatientInformation/PatientName/LastName"),
+            patient_date_of_birth=patient_dob,
             mrn=mrn,
             provider_name=provider_name,
             provider_npi=provider_npi,
