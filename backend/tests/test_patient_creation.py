@@ -5,7 +5,7 @@ import pytest
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
-from app.models import Patient, Order
+from app.models import MedicationHistory, Patient, Order
 from app.orders import service
 from order_test_support import isolated_client, order_payload
 
@@ -26,6 +26,21 @@ def dispatched(monkeypatch):
 BASE = {"first_name": "John", "last_name": "Smith", "mrn": "001234", "primary_diagnosis": "g70.00"}
 
 
+def test_medication_history_round_trip_preserves_position(registration):
+    client, db = registration
+    patient_id = client.post("/patients", json=BASE).json()["id"]
+    patient = db.get(Patient, patient_id)
+    assert patient.medication_history == []
+    patient.medication_history.extend([
+        MedicationHistory(position=1, medication_text="Example B 10mg"),
+        MedicationHistory(position=0, medication_text="Example A 60mg"),
+    ])
+    db.commit()
+    db.expunge_all()
+    rows = db.get(Patient, patient_id).medication_history
+    assert [row.medication_text for row in rows] == ["Example A 60mg", "Example B 10mg"]
+
+
 def test_registration_then_order_and_search(registration, dispatched):
     client, db = registration
     data = dict(BASE, middle_name=" A. ", date_of_birth="1979-06-08", sex="Female",
@@ -38,7 +53,8 @@ def test_registration_then_order_and_search(registration, dispatched):
                        "middle_name": "A.", "primary_diagnosis": "G70.00",
                        "additional_diagnoses": ["I10", "K21.0"]}
     db.expire_all()
-    assert db.get(Patient, patient["id"]).additional_diagnoses == ["I10", "K21.0"]
+    stored = db.get(Patient, patient["id"])
+    assert [(row.position, row.icd10_code) for row in stored.diagnoses] == [(0, "I10"), (1, "K21.0")]
     assert db.query(Order).count() == 0 and dispatched == []
     order = order_payload(patient_first_name="John", patient_last_name="Smith", mrn="001234")
     assert client.post("/orders", json=order).status_code == 202

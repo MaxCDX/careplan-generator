@@ -37,6 +37,6 @@ def serialize_created_patient(patient: Patient) -> PatientCreated:
         weight_kg=patient.weight_kg,
         allergies=patient.allergies,
         primary_diagnosis=patient.primary_diagnosis,
-        additional_diagnoses=patient.additional_diagnoses,
+        additional_diagnoses=[diagnosis.icd10_code for diagnosis in patient.diagnoses],
         created_at=patient.created_at,
     )

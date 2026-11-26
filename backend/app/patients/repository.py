@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, load_only
 from sqlalchemy.exc import IntegrityError
 
 from app.patients.models import Patient
+from app.models import PatientDiagnosis
 from app.patients.schemas import PatientCreate
 
 
@@ -40,7 +41,11 @@ def list_patients(db: Session, *, page: int, page_size: int, search: str | None)
 
 
 def insert_patient(db: Session, data: PatientCreate) -> Patient:
-    patient = Patient(**data.model_dump())
+    patient = Patient(**data.model_dump(exclude={"additional_diagnoses"}))
+    patient.diagnoses = [
+        PatientDiagnosis(icd10_code=code, position=position)
+        for position, code in enumerate(data.additional_diagnoses)
+    ]
     db.add(patient)
     try:
         db.commit()

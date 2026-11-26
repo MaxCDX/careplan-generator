@@ -238,6 +238,8 @@ Relationship summary:
 
 ```text
 Patient  1 → many Orders
+Patient  1 → many PatientDiagnosis rows (additional ICD-10 codes)
+Patient  1 → many MedicationHistory rows (medication text)
 Provider 1 → many Orders
 Order    1 → zero or one CarePlan
 ```
