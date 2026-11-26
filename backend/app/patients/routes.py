@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.exceptions import NotFoundError
 from app.patients import repository
-from app.patients.schemas import PatientCreate, PatientCreated, PatientListResponse
+from app.patients.schemas import PatientCreate, PatientCreated, PatientDetail, PatientListResponse
 from app.patients.service import create_patient
-from app.patients.serializers import serialize_created_patient, serialize_patient_list_item
+from app.patients.serializers import serialize_created_patient, serialize_patient_detail, serialize_patient_list_item
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -28,3 +29,12 @@ def list_patients(
         count=count, page=page, page_size=page_size,
         results=[serialize_patient_list_item(patient) for patient in patients],
     )
+
+
+@router.get("/{patient_id}", response_model=PatientDetail, responses={404: {"description": "Patient not found"}})
+def get_patient_detail(patient_id: str, db: Session = Depends(get_db)):
+    patient = repository.get_patient_detail(db, patient_id)
+    if patient is None:
+        raise NotFoundError(code="PATIENT_NOT_FOUND", message="Patient not found.")
+    orders = repository.list_patient_orders(db, patient_id)
+    return serialize_patient_detail(patient, orders)

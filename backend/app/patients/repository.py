@@ -1,11 +1,11 @@
 from datetime import date
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session, load_only
+from sqlalchemy.orm import Session, load_only, selectinload
 from sqlalchemy.exc import IntegrityError
 
 from app.patients.models import Patient
-from app.models import PatientDiagnosis
+from app.models import Order, PatientDiagnosis
 from app.patients.schemas import PatientCreate
 
 
@@ -59,6 +59,25 @@ def insert_patient(db: Session, data: PatientCreate) -> Patient:
 def get_patient_by_mrn(db: Session, mrn: str) -> Patient | None:
     """Return an existing Patient by MRN."""
     return db.query(Patient).filter(Patient.mrn == mrn).one_or_none()
+
+
+def get_patient_detail(db: Session, patient_id: str) -> Patient | None:
+    return (
+        db.query(Patient)
+        .options(selectinload(Patient.diagnoses), selectinload(Patient.medication_history))
+        .filter(Patient.id == patient_id)
+        .one_or_none()
+    )
+
+
+def list_patient_orders(db: Session, patient_id: str) -> list[Order]:
+    return (
+        db.query(Order)
+        .options(load_only(Order.id, Order.medication, Order.status, Order.created_at))
+        .filter(Order.patient_id == patient_id)
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .all()
+    )
 
 
 def get_patient_by_name_and_dob(db: Session, *, first_name: str, last_name: str, dob: date | None) -> Patient | None:

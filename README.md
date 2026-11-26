@@ -334,6 +334,7 @@ The response includes the total match count and a page of patient summaries with
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /patients/{patient_id}` | Read a patient profile with additional diagnoses, medication history, and order summaries (newest first). |
 | `POST /external-orders/{source}` | Submit a partner payload through the same Order workflow. |
 | `GET /orders/{order_id}` | Read one Order with patient and provider details. |
 | `GET /orders/{order_id}/status` | Poll background generation status. |

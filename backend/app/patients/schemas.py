@@ -86,3 +86,22 @@ class PatientListResponse(BaseModel):
     page: int
     page_size: int
     results: list[PatientListItem]
+
+
+class PatientOrderSummary(BaseModel):
+    id: str
+    medication_name: str
+    status: str
+    created_at: datetime
+
+
+class PatientDetail(PatientRead):
+    full_name: str
+    sex: str | None
+    weight_kg: float | None
+    allergies: str | None
+    primary_diagnosis: str | None
+    additional_diagnoses: list[str]
+    medication_history: list[str]
+    orders: list[PatientOrderSummary]
+    created_at: datetime
