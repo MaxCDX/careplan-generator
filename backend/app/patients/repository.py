@@ -98,6 +98,19 @@ def get_patient_for_update(db: Session, patient_id: str) -> Patient | None:
     return db.query(Patient).filter(Patient.id == patient_id).with_for_update().one_or_none()
 
 
+def patient_order_states(db: Session, patient_id: str):
+    return db.query(Order.id, Order.status).filter(Order.patient_id == patient_id).order_by(Order.id).all()
+
+
+def delete_patient(db: Session, patient: Patient) -> None:
+    try:
+        db.delete(patient)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 def save_patient_changes(db: Session, patient: Patient, changes: dict) -> Patient:
     diagnoses = changes.pop("additional_diagnoses", None)
     medications = changes.pop("medication_history", None)

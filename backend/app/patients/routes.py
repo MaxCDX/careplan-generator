@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.exceptions import NotFoundError
 from app.patients import repository
 from app.patients.schemas import PatientCreate, PatientCreated, PatientDetail, PatientListResponse, PatientUpdate, PatientUpdated
-from app.patients.service import create_patient, update_patient
+from app.patients.service import create_patient, delete_patient, update_patient
 from app.patients.serializers import serialize_created_patient, serialize_patient_detail, serialize_patient_list_item, serialize_updated_patient
 
 router = APIRouter(prefix="/patients", tags=["patients"])
@@ -47,3 +47,11 @@ def get_patient_detail(patient_id: str, db: Session = Depends(get_db)):
 def edit_patient(patient_id: str, data: PatientUpdate, db: Session = Depends(get_db)):
     """Update only supplied fields; MRN is immutable."""
     return serialize_updated_patient(update_patient(db, patient_id, data))
+
+
+@router.delete("/{patient_id}", status_code=204, response_class=Response, responses={
+    404: {"description": "Patient not found"}, 409: {"description": "Patient has orders"},
+})
+def remove_patient(patient_id: str, db: Session = Depends(get_db)):
+    delete_patient(db, patient_id)
+    return Response(status_code=204)

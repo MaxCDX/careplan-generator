@@ -51,3 +51,24 @@ def create_patient(db: Session, data: PatientCreate) -> Patient:
         if existing:
             raise mrn_conflict(existing)
         raise
+
+
+def delete_patient(db: Session, patient_id: str) -> None:
+    patient = repository.get_patient_for_update(db, patient_id)
+    if patient is None:
+        raise NotFoundError(code="PATIENT_NOT_FOUND", message="Patient not found.")
+
+    orders = repository.patient_order_states(db, patient_id)
+    active_ids = [order.id for order in orders if order.status in ("queued", "processing")]
+    if active_ids:
+        raise ConflictError(
+            code="PATIENT_HAS_ACTIVE_ORDERS",
+            message="Cannot delete patient with active orders.",
+            detail={"active_orders": active_ids},
+        )
+    if orders:
+        raise ConflictError(
+            code="PATIENT_HAS_ORDER_HISTORY",
+            message="Cannot delete patient with order history.",
+        )
+    repository.delete_patient(db, patient)
