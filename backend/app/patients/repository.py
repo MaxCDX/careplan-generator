@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, load_only, selectinload
 from sqlalchemy.exc import IntegrityError
 
 from app.patients.models import Patient
-from app.models import Order, PatientDiagnosis
+from app.models import MedicationHistory, Order, PatientDiagnosis
 from app.patients.schemas import PatientCreate
 
 
@@ -80,17 +80,49 @@ def list_patient_orders(db: Session, patient_id: str) -> list[Order]:
     )
 
 
-def get_patient_by_name_and_dob(db: Session, *, first_name: str, last_name: str, dob: date | None) -> Patient | None:
+def get_patient_by_name_and_dob(db: Session, *, first_name: str, last_name: str, dob: date | None,
+                                exclude_id: str | None = None) -> Patient | None:
     """Return an existing Patient by identity fields."""
     if not dob:
         return None
 
-    return (
-        db.query(Patient)
-        .filter(Patient.first_name == first_name, Patient.last_name == last_name, Patient.date_of_birth == dob)
-        .order_by(Patient.id)
-        .first()
+    query = db.query(Patient).filter(
+        Patient.first_name == first_name, Patient.last_name == last_name, Patient.date_of_birth == dob
     )
+    if exclude_id is not None:
+        query = query.filter(Patient.id != exclude_id)
+    return query.order_by(Patient.id).first()
+
+
+def get_patient_for_update(db: Session, patient_id: str) -> Patient | None:
+    return db.query(Patient).filter(Patient.id == patient_id).with_for_update().one_or_none()
+
+
+def save_patient_changes(db: Session, patient: Patient, changes: dict) -> Patient:
+    diagnoses = changes.pop("additional_diagnoses", None)
+    medications = changes.pop("medication_history", None)
+    try:
+        if diagnoses is not None:
+            patient.diagnoses.clear()
+        if medications is not None:
+            patient.medication_history.clear()
+        if diagnoses is not None or medications is not None:
+            db.flush()  # Release old (patient_id, position) slots before inserting replacements.
+        if diagnoses is not None:
+            patient.diagnoses = [PatientDiagnosis(icd10_code=code, position=i) for i, code in enumerate(diagnoses)]
+        if medications is not None:
+            patient.medication_history = [
+                MedicationHistory(medication_text=text, position=i) for i, text in enumerate(medications)
+            ]
+        for field, value in changes.items():
+            setattr(patient, field, value)
+        patient.updated_at = func.now()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(patient)
+    return patient
 
 
 def get_or_create_patient(db: Session, *, first_name: str, middle_name: str | None, last_name: str, mrn: str, dob: date | None = None) -> Patient:

@@ -335,6 +335,7 @@ The response includes the total match count and a page of patient summaries with
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /patients/{patient_id}` | Read a patient profile with additional diagnoses, medication history, and order summaries (newest first). |
+| `PUT /patients/{patient_id}` | Update supplied fields, e.g. `{"weight_kg":75}`. MRN is immutable. Supplied diagnosis and medication lists replace their previous contents; `[]` clears them. Returns an update summary with `updated_at`. |
 | `POST /external-orders/{source}` | Submit a partner payload through the same Order workflow. |
 | `GET /orders/{order_id}` | Read one Order with patient and provider details. |
 | `GET /orders/{order_id}/status` | Poll background generation status. |

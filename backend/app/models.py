@@ -29,6 +29,7 @@ class Patient(Base):
     allergies = Column(Text)
     primary_diagnosis = Column(String(8))
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     @property
     def full_name(self):

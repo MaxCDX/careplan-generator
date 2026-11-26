@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.exceptions import NotFoundError
 from app.patients import repository
-from app.patients.schemas import PatientCreate, PatientCreated, PatientDetail, PatientListResponse
-from app.patients.service import create_patient
-from app.patients.serializers import serialize_created_patient, serialize_patient_detail, serialize_patient_list_item
+from app.patients.schemas import PatientCreate, PatientCreated, PatientDetail, PatientListResponse, PatientUpdate, PatientUpdated
+from app.patients.service import create_patient, update_patient
+from app.patients.serializers import serialize_created_patient, serialize_patient_detail, serialize_patient_list_item, serialize_updated_patient
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -38,3 +38,12 @@ def get_patient_detail(patient_id: str, db: Session = Depends(get_db)):
         raise NotFoundError(code="PATIENT_NOT_FOUND", message="Patient not found.")
     orders = repository.list_patient_orders(db, patient_id)
     return serialize_patient_detail(patient, orders)
+
+
+@router.put("/{patient_id}", response_model=PatientUpdated, responses={
+    400: {"description": "Invalid update"}, 404: {"description": "Patient not found"},
+    409: {"description": "Patient identity conflict"},
+})
+def edit_patient(patient_id: str, data: PatientUpdate, db: Session = Depends(get_db)):
+    """Update only supplied fields; MRN is immutable."""
+    return serialize_updated_patient(update_patient(db, patient_id, data))

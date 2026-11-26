@@ -41,3 +41,10 @@ def parse_birth_date(value) -> date | None:
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value.strip()):
         raise ValueError("Date of birth must use YYYY-MM-DD format")
     return date.fromisoformat(value.strip())
+
+
+def validate_patient_birth_date(value) -> date | None:
+    parsed = parse_birth_date(value)
+    if parsed is not None and parsed > date.today():
+        raise ValueError("Date of birth cannot be in the future")
+    return parsed

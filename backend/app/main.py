@@ -53,7 +53,9 @@ async def request_validation_exception_handler(request, exc):
     """Return Bad Request for malformed client input in this learning project."""
     logging.info("Request validation error handled: error_count=%s", len(exc.errors()))
     errors = exc.errors()
-    if request.url.path == "/patients":
+    if request.url.path == "/patients" or (
+        request.method == "PUT" and request.url.path.startswith("/patients/")
+    ):
         # Registration inputs can contain clinical data, including the entire body.
         errors = [{key: error[key] for key in ("loc", "msg", "type")} for error in errors]
     return JSONResponse(
