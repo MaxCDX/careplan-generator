@@ -332,6 +332,11 @@ The response includes the total match count and a page of patient summaries with
 
 ### Other endpoints
 
+`POST /providers` registers a name and a 10-digit NPI string (201).
+For `409 PROVIDER_POSSIBLE_DUPLICATE`, review the existing provider ID and NPI
+in `detail`; resubmit with `confirm: true` to register a distinct provider.
+`409 PROVIDER_NPI_CONFLICT` always blocks creation.
+
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /patients/{patient_id}` | Read a patient profile with additional diagnoses, medication history, and order summaries (newest first). |

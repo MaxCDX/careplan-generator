@@ -1,11 +1,11 @@
 from datetime import date, datetime
-import re
 
 from pydantic import BaseModel, field_validator
 
 from app.patients.schemas import PatientRead
 from app.patients.validators import blank_to_none, parse_birth_date, validate_mrn, validate_name, validate_middle_name
 from app.providers.schemas import ProviderRead
+from app.providers.validators import validate_npi
 
 
 class OrderCreate(BaseModel):
@@ -39,10 +39,7 @@ class OrderCreate(BaseModel):
     @field_validator("provider_npi")
     @classmethod
     def provider_npi_must_be_10_digits(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not re.fullmatch(r"\d{10}", cleaned):
-            raise ValueError("Provider NPI must be exactly 10 digits")
-        return cleaned
+        return validate_npi(value)
 
     @field_validator("patient_first_name", "patient_last_name")
     @classmethod

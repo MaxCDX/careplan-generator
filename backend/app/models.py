@@ -72,6 +72,7 @@ class Provider(Base):
     id = Column(String(36), primary_key=True, default=new_uuid)
     name = Column(String(200), nullable=False)
     npi = Column(String(20), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     orders = relationship("Order", back_populates="provider")
 
