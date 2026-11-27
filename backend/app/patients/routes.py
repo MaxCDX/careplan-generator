@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.exceptions import NotFoundError
 from app.patients import repository
-from app.patients.schemas import PatientCreate, PatientCreated, PatientDetail, PatientListResponse, PatientUpdate, PatientUpdated
+from app.patients.schemas import PatientCreate, PatientCreated, PatientDetail, PatientListResponse, PatientOrdersResponse, PatientUpdate, PatientUpdated
 from app.patients.service import create_patient, delete_patient, update_patient
-from app.patients.serializers import serialize_created_patient, serialize_patient_detail, serialize_patient_list_item, serialize_updated_patient
+from app.patients.serializers import serialize_created_patient, serialize_order_summary, serialize_patient_detail, serialize_patient_list_item, serialize_updated_patient
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -38,6 +38,20 @@ def get_patient_detail(patient_id: str, db: Session = Depends(get_db)):
         raise NotFoundError(code="PATIENT_NOT_FOUND", message="Patient not found.")
     orders = repository.list_patient_orders(db, patient_id)
     return serialize_patient_detail(patient, orders)
+
+
+@router.get("/{patient_id}/orders", response_model=PatientOrdersResponse,
+            responses={404: {"description": "Patient not found"}})
+def get_patient_orders(patient_id: str, db: Session = Depends(get_db)):
+    patient = repository.get_patient_identity(db, patient_id)
+    if patient is None:
+        raise NotFoundError(code="PATIENT_NOT_FOUND", message="Patient not found.")
+    orders = repository.list_patient_orders(db, patient_id)
+    return PatientOrdersResponse(
+        patient_id=patient.id,
+        patient_name=patient.full_name,
+        orders=[serialize_order_summary(order) for order in orders],
+    )
 
 
 @router.put("/{patient_id}", response_model=PatientUpdated, responses={

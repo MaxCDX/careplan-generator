@@ -70,6 +70,15 @@ def get_patient_detail(db: Session, patient_id: str) -> Patient | None:
     )
 
 
+def get_patient_identity(db: Session, patient_id: str) -> Patient | None:
+    return (
+        db.query(Patient)
+        .options(load_only(Patient.id, Patient.first_name, Patient.middle_name, Patient.last_name))
+        .filter(Patient.id == patient_id)
+        .one_or_none()
+    )
+
+
 def list_patient_orders(db: Session, patient_id: str) -> list[Order]:
     return (
         db.query(Order)

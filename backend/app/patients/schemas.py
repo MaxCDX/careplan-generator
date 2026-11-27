@@ -163,6 +163,12 @@ class PatientOrderSummary(BaseModel):
     created_at: datetime
 
 
+class PatientOrdersResponse(BaseModel):
+    patient_id: str
+    patient_name: str
+    orders: list[PatientOrderSummary]
+
+
 class PatientDetail(PatientRead):
     full_name: str
     sex: str | None
