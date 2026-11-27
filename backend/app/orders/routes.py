@@ -15,6 +15,17 @@ from app.orders.schemas import OrderAccepted, OrderCreate, OrderListResponse, Or
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
+@router.post("/{order_id}/retry", response_model=OrderAccepted, status_code=202, responses={
+    404: {"description": "Order not found"}, 409: {"description": "Order is not failed"},
+    503: {"description": "Queue unavailable"},
+})
+def retry_order(order_id: str, db: Session = Depends(get_db)):
+    current = service.retry_failed_order(db, order_id)
+    if current is not None:
+        return JSONResponse(status_code=409, content={"error": "Order is not in failed status", "current_status": current})
+    return OrderAccepted(order_id=order_id, status="processing", message="CarePlan generation restarted")
+
+
 @router.get("/{order_id}/careplan/download", response_class=PlainTextResponse, responses={
     404: {"description": "CarePlan not yet generated", "content": {
         "application/json": {"example": {"error": "CarePlan not yet generated"}}

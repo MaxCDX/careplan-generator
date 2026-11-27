@@ -30,7 +30,7 @@ def get_retry_countdown(retry_count: int) -> int:
     return 2**retry_count
 
 
-def process_order_for_celery(task_self, order_id: str) -> dict[str, str]:
+def process_order_for_celery(task_self, order_id: str, *, manual_retry: bool = False) -> dict[str, str]:
     """Process one order id inside a Celery task-owned DB session."""
     db = SessionLocal()
     try:
@@ -41,7 +41,7 @@ def process_order_for_celery(task_self, order_id: str) -> dict[str, str]:
             return {"status": "order_not_found", "order_id": order_id}
 
         can_process_order = order.status == "queued" or (
-            order.status == "processing" and task_self.request.retries > 0
+            order.status == "processing" and (manual_retry or task_self.request.retries > 0)
         )
         if not can_process_order:
             logger.info(
@@ -114,3 +114,8 @@ def process_order_for_celery(task_self, order_id: str) -> dict[str, str]:
 def generate_care_plan_task(self, order_id: str) -> dict[str, str]:
     """Celery entrypoint for generating a care plan from an order id only."""
     return process_order_for_celery(self, order_id)
+
+
+@celery_app.task(bind=True, name="app.tasks.care_plan_tasks.retry_care_plan_task", max_retries=MAX_RETRIES)
+def retry_care_plan_task(self, order_id: str) -> dict[str, str]:
+    return process_order_for_celery(self, order_id, manual_retry=True)

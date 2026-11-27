@@ -5,19 +5,35 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.exceptions import ConflictError
+from app.exceptions import ConflictError, NotFoundError, ServiceUnavailableError
 from app.orders import repository
 from app.orders.models import Order
 from app.orders.schemas import OrderCreate, WarningResponse
 from app.patients import repository as patient_repository
 from app.providers import repository as provider_repository
-from app.tasks.care_plan_tasks import generate_care_plan_task
+from app.tasks.care_plan_tasks import generate_care_plan_task, retry_care_plan_task
 
 DISPATCH_FAILURE_MESSAGE = "Failed to enqueue care plan generation request."
 
 
 class OrderDispatchError(Exception):
     """Raised when a persisted order cannot be dispatched to the worker."""
+
+
+def retry_failed_order(db: Session, order_id: str) -> str | None:
+    """Return the conflicting status, or None after dispatching the retry."""
+    if not repository.claim_failed_order(db, order_id):
+        current = repository.get_current_status(db, order_id)
+        if current is None:
+            raise NotFoundError(code="ORDER_NOT_FOUND", message="Order not found.")
+        return current
+    try:
+        retry_care_plan_task.delay(order_id)
+    except Exception as exc:
+        repository.restore_failed_retry(db, order_id, DISPATCH_FAILURE_MESSAGE)
+        raise ServiceUnavailableError(code="CARE_PLAN_QUEUE_UNAVAILABLE",
+                                      message="Care plan request could not be queued. Please try again later.") from exc
+    return None
 
 
 def create_order_and_dispatch_care_plan(db: Session, data: OrderCreate) -> Order | WarningResponse:

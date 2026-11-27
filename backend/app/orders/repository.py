@@ -44,6 +44,25 @@ def get_latest_order_for_patient_and_medication(db: Session, *, patient_id: str,
     )
 
 
+def claim_failed_order(db: Session, order_id: str) -> bool:
+    claimed = db.query(Order).filter(Order.id == order_id, Order.status == "failed").update(
+        {Order.status: "processing", Order.error_message: None}, synchronize_session=False,
+    )
+    db.commit()  # Make the restart visible to the worker before dispatch.
+    return claimed == 1
+
+
+def get_current_status(db: Session, order_id: str) -> str | None:
+    return db.query(Order.status).filter(Order.id == order_id).scalar()
+
+
+def restore_failed_retry(db: Session, order_id: str, message: str) -> None:
+    db.query(Order).filter(Order.id == order_id, Order.status == "processing").update(
+        {Order.status: "failed", Order.error_message: message}, synchronize_session=False,
+    )
+    db.commit()
+
+
 def mark_order_failed(db: Session, order_id: str, error_message: str) -> None:
     """Persist a safe failed state when dispatch cannot be completed."""
     order = db.query(Order).filter(Order.id == order_id).one_or_none()

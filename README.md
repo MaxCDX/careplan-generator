@@ -347,6 +347,7 @@ in `detail`; resubmit with `confirm: true` to register a distinct provider.
 | `GET /orders/{order_id}` | Read one Order with patient and provider details. |
 | `GET /orders/{order_id}/status` | Poll for `order_id` and `status`. Completion includes a short `careplan_preview`; failure includes a safe `error_message`. Fetch the full text once from Order detail after completion. |
 | `GET /orders/{order_id}/careplan/download` | Download the completed CarePlan as a UTF-8 text attachment. Returns 404 until the order is completed and the plan exists. |
+| `POST /orders/{order_id}/retry` | Restart generation for a failed order (202). Other states return 409 with the current status. |
 | `GET /care-plans` · `GET /care-plans/{care_plan_id}` | List or retrieve generated care plans. |
 
 See [interactive API docs](http://localhost:8000/docs) for request and response schemas when running locally.
