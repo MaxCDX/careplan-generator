@@ -353,7 +353,8 @@ See [interactive API docs](http://localhost:8000/docs) for request and response 
 
 ## Orders List Pagination and Filtering
 
-`GET /orders?status=failed&patient_name=John` lists matching orders, newest first. Both filters are optional and can be combined.
+`GET /orders?status=failed&patient_name=John` lists matching orders, newest first.
+Optional `patient_id` and `provider_id` filters accept UUIDs. All supplied filters use AND.
 
 Both patient and order lists return `{count, page, page_size, results}`. `count` is the filtered total before pagination. Pages start at 1, default to 20 items, and allow up to 100 items. A page past the last match returns an empty `results` array.
 

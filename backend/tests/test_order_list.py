@@ -13,21 +13,25 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import CarePlan, Order, Patient, Provider
 
+JOHN_ID = "10000000-0000-4000-8000-000000000001"
+PROVIDER_ID = "20000000-0000-4000-8000-000000000001"
+
 
 @pytest.fixture
 def listing():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine)()
-    provider = Provider(id="provider", name="Fictional Provider", npi="1234567890")
-    john = Patient(id="john", first_name="John", last_name="Smith", mrn="123456")
+    provider = Provider(id=PROVIDER_ID, name="Fictional Provider", npi="1234567890")
+    other = Provider(name="Other Provider", npi="0123456789")
+    john = Patient(id=JOHN_ID, first_name="John", last_name="Smith", mrn="123456")
     alice = Patient(id="alice", first_name="Alice", last_name="Jones", mrn="654321")
-    db.add_all([provider, john, alice])
+    db.add_all([provider, other, john, alice])
     db.flush()
     for i in range(25):
         db.add(Order(
             id=f"order-{i:02}", patient_id=john.id if i % 2 == 0 else alice.id,
-            provider_id=provider.id, medication="IVIG", diagnosis="G70.00",
+            provider_id=provider.id if i < 16 else other.id, medication="IVIG", diagnosis="G70.00",
             clinical_notes="Fictional note", status=["queued", "processing", "completed", "failed"][i % 4],
             created_at=datetime(2026, 1, 1) + timedelta(minutes=i),
         ))
@@ -187,7 +191,7 @@ def test_maximum_page_size_is_allowed(listing):
 
 def test_literal_wildcards_match_names_containing_them(listing):
     client, db, _ = listing
-    db.query(Patient).filter(Patient.id == "john").update({Patient.first_name: "John %_/ Example"})
+    db.query(Patient).filter(Patient.id == JOHN_ID).update({Patient.first_name: "John %_/ Example"})
     db.commit()
     body = client.get("/orders", params={"patient_name": "%_/"}).json()
     assert body["count"] == 13
@@ -224,4 +228,38 @@ def test_openapi_describes_list_contract():
     assert parameters["page_size"]["maximum"] == 100
     assert parameters["status"]["anyOf"][0]["enum"] == ["queued", "processing", "completed", "failed"]
     assert "400" in operation["responses"]
+
+    for name in ("patient_id", "provider_id"):
+        assert parameters[name]["anyOf"][0]["format"] == "uuid"
     assert operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/OrderListResponse")
+
+
+@pytest.mark.parametrize("filters,expected", [
+    ({"patient_id": JOHN_ID}, range(24, -1, -2)),
+    ({"provider_id": PROVIDER_ID}, range(15, -1, -1)),
+    ({"patient_id": PROVIDER_ID}, []),
+    ({"provider_id": JOHN_ID}, []),
+])
+def test_order_id_filters(listing, filters, expected):
+    client, _, _ = listing
+    response = client.get("/orders", params=filters)
+    assert response.status_code == 200
+    assert response.json()["count"] == len(expected)
+    assert [row["id"] for row in response.json()["results"]] == [f"order-{i:02}" for i in expected]
+
+
+def test_order_id_filters_combined_before_pagination(listing):
+    client, _, _ = listing
+    filters = {"patient_id": JOHN_ID, "provider_id": PROVIDER_ID, "status": "queued",
+               "patient_name": "smith", "page": 2, "page_size": 2}
+    body = client.get("/orders", params=filters).json()
+    assert body["count"] == 4
+    assert [row["id"] for row in body["results"]] == ["order-04", "order-00"]
+
+
+@pytest.mark.parametrize("name", ["patient_id", "provider_id"])
+def test_invalid_id_filter(listing, name):
+    client, _, _ = listing
+    response = client.get("/orders", params={name: "1"})
+    assert response.status_code == 400
+    assert response.json()["code"] == "VALIDATION_ERROR"

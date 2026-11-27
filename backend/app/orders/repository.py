@@ -57,11 +57,16 @@ def mark_order_failed(db: Session, order_id: str, error_message: str) -> None:
 def list_orders(
     db: Session, *, page: int = 1, page_size: int = 20,
     order_status: str | None = None, patient_name: str | None = None,
+    patient_id: str | None = None, provider_id: str | None = None,
 ) -> tuple[int, list[Order]]:
     """Count matching Orders and load only the requested page with related rows."""
     query = db.query(Order)
     if order_status is not None:
         query = query.filter(Order.status == order_status)
+    if patient_id is not None:
+        query = query.filter(Order.patient_id == patient_id)
+    if provider_id is not None:
+        query = query.filter(Order.provider_id == provider_id)
     cleaned_name = patient_name.strip() if patient_name is not None else ""
     if cleaned_name:
         query = query.join(Order.patient).filter(full_name_contains(cleaned_name))

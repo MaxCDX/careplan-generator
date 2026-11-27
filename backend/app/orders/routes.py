@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
@@ -67,12 +68,16 @@ def list_orders(
     page_size: int = Query(default=20, ge=1, le=100),
     order_status: Literal["queued", "processing", "completed", "failed"] | None = Query(default=None, alias="status"),
     patient_name: str | None = Query(default=None),
+    patient_id: UUID | None = None,
+    provider_id: UUID | None = None,
     db: Session = Depends(get_db),
 ):
     """Return a filtered page of Orders, newest first."""
     count, orders = repository.list_orders(
         db, page=page, page_size=page_size,
         order_status=order_status, patient_name=patient_name,
+        patient_id=str(patient_id) if patient_id is not None else None,
+        provider_id=str(provider_id) if provider_id is not None else None,
     )
     return OrderListResponse(
         count=count, page=page, page_size=page_size,
