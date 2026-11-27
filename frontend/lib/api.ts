@@ -29,3 +29,12 @@ export async function getOrderStatus(orderId: string): Promise<OrderStatusRespon
 
   return order
 }
+
+export async function getCarePlanContent(orderId: string, signal: AbortSignal): Promise<string | null> {
+  const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, { signal })
+  if (!response.ok) {
+    throw new Error('Unable to load the completed care plan.')
+  }
+  const order: { care_plan_content: string | null } = await response.json()
+  return order.care_plan_content
+}

@@ -39,9 +39,8 @@ export type ApiErrorResponse = {
 export type OrderSubmitResponse = QueuedOrder | WarningOrderResponse
 
 export type OrderStatusResponse = {
-  id: string
+  order_id: string
   status: string
-  error_message: string | null
-  has_care_plan: boolean
-  care_plan_content: string | null
+  error_message?: string
+  careplan_preview?: string
 }

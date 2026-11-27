@@ -27,7 +27,7 @@ def test_metrics_endpoint_returns_prometheus_text_format():
 
 def test_normal_api_request_increments_http_metrics(monkeypatch):
     app.dependency_overrides[get_db] = lambda: object()
-    monkeypatch.setattr(order_repository, "get_order", lambda db, order_id: None)
+    monkeypatch.setattr(order_repository, "get_status_snapshot", lambda db, order_id: None)
 
     try:
         with TestClient(app) as client:
@@ -45,7 +45,7 @@ def test_normal_api_request_increments_http_metrics(monkeypatch):
 def test_dynamic_paths_use_route_templates_instead_of_raw_order_ids(monkeypatch):
     raw_order_id = "raw-order-id-must-not-be-a-metric-label"
     app.dependency_overrides[get_db] = lambda: object()
-    monkeypatch.setattr(order_repository, "get_order", lambda db, order_id: None)
+    monkeypatch.setattr(order_repository, "get_status_snapshot", lambda db, order_id: None)
 
     try:
         with TestClient(app) as client:

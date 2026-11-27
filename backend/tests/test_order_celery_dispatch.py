@@ -4,6 +4,7 @@ from types import SimpleNamespace
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.database import get_db
 from app.main import app
@@ -163,43 +164,36 @@ def test_get_order_returns_404_for_missing_order(monkeypatch):
     }
 
 
-def test_get_order_status_returns_minimal_polling_payload(monkeypatch):
-    def fake_get_order(db, order_id):
-        assert order_id == "order-1"
-        return make_completed_order_with_care_plan()
+@pytest.mark.parametrize("state,content,extra", [
+    ("queued", None, {}),
+    ("processing", None, {}),
+    ("failed", None, {"error_message": "Generation failed."}),
+    ("completed", "x" * 200, {"careplan_preview": "x" * 200}),
+    ("completed", "文" * 240, {"careplan_preview": "文" * 200 + "…"}),
+])
+def test_get_order_status_returns_minimal_polling_payload(monkeypatch, state, content, extra):
+    from app.models import CarePlan, Order
+    from order_test_support import isolated_client
 
-    app.dependency_overrides[get_db] = lambda: object()
-    monkeypatch.setattr(repository, "get_order", fake_get_order)
-
-    try:
-        response = TestClient(app).get("/orders/order-1/status")
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "id": "order-1",
-        "status": "completed",
-        "error_message": None,
-        "has_care_plan": True,
-        "care_plan_content": "Generated care plan content",
-    }
-
-    forbidden_fields = {
-        "patient",
-        "provider",
-        "medication",
-        "diagnosis",
-        "clinical_notes",
-        "created_at",
-        "updated_at",
-    }
-    assert forbidden_fields.isdisjoint(response.json())
+    monkeypatch.setattr(service.generate_care_plan_task, "delay", lambda order_id: None)
+    with isolated_client() as (client, db):
+        order_id = client.post("/orders", json=order_payload()).json()["order_id"]
+        order = db.get(Order, order_id)
+        order.status = state
+        order.error_message = "Generation failed."
+        if content:
+            order.care_plan = CarePlan(care_plan_content=content, model="mock")
+        db.commit()
+        response = client.get(f"/orders/{order_id}/status")
+        assert response.status_code == 200
+        assert response.json() == {"order_id": order_id, "status": state, **extra}
+        if content:
+            assert client.get(f"/orders/{order_id}").json()["care_plan_content"] == content
 
 
 def test_get_order_status_returns_404_for_missing_order(monkeypatch):
     app.dependency_overrides[get_db] = lambda: object()
-    monkeypatch.setattr(repository, "get_order", lambda db, order_id: None)
+    monkeypatch.setattr(repository, "get_status_snapshot", lambda db, order_id: None)
 
     try:
         response = TestClient(app).get("/orders/missing-order/status")

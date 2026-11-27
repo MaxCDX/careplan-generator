@@ -345,7 +345,7 @@ in `detail`; resubmit with `confirm: true` to register a distinct provider.
 | `DELETE /patients/{patient_id}` | Delete a patient with no orders and their diagnosis and medication rows (204). Active orders return 409 with `detail.active_orders`; historical orders also block deletion. An unknown patient returns 404. |
 | `POST /external-orders/{source}` | Submit a partner payload through the same Order workflow. |
 | `GET /orders/{order_id}` | Read one Order with patient and provider details. |
-| `GET /orders/{order_id}/status` | Poll background generation status. |
+| `GET /orders/{order_id}/status` | Poll for `order_id` and `status`. Completion includes a short `careplan_preview`; failure includes a safe `error_message`. Fetch the full text once from Order detail after completion. |
 | `GET /care-plans` · `GET /care-plans/{care_plan_id}` | List or retrieve generated care plans. |
 
 See [interactive API docs](http://localhost:8000/docs) for request and response schemas when running locally.

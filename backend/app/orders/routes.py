@@ -85,10 +85,10 @@ def list_orders(
     )
 
 
-@router.get("/{order_id}/status", response_model=OrderStatusRead)
+@router.get("/{order_id}/status", response_model=OrderStatusRead, response_model_exclude_none=True)
 def get_order_status(order_id: str, db: Session = Depends(get_db)):
     """Return minimal order workflow state for frontend polling."""
-    order = repository.get_order(db, order_id)
+    order = repository.get_status_snapshot(db, order_id)
     if not order:
         raise NotFoundError(
             code="ORDER_NOT_FOUND",

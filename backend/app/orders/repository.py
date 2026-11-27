@@ -1,3 +1,4 @@
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.orders.models import Order
@@ -81,6 +82,25 @@ def list_orders(
         .all()
     )
     return count, orders
+
+
+PREVIEW_LENGTH = 200
+
+
+def get_status_snapshot(db: Session, order_id: str):
+    from app.models import CarePlan
+
+    return (
+        db.query(
+            Order.id, Order.status, Order.error_message,
+            case((Order.status == "completed", func.substr(
+                CarePlan.care_plan_content, 1, PREVIEW_LENGTH + 1
+            ))).label("preview"),
+        )
+        .outerjoin(Order.care_plan)
+        .filter(Order.id == order_id)
+        .one_or_none()
+    )
 
 
 def get_order(db: Session, order_id: str) -> Order | None:
