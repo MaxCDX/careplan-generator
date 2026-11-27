@@ -2,6 +2,7 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.orders.models import Order
+from app.models import CarePlan
 from app.orders.schemas import OrderCreate
 from app.patients.repository import full_name_contains, get_or_create_patient
 from app.providers.repository import get_or_create_provider
@@ -87,8 +88,16 @@ def list_orders(
 PREVIEW_LENGTH = 200
 
 
+def get_completed_care_plan_text(db: Session, order_id: str) -> str | None:
+    return (
+        db.query(CarePlan.care_plan_content)
+        .join(CarePlan.order)
+        .filter(Order.id == order_id, Order.status == "completed")
+        .scalar()
+    )
+
+
 def get_status_snapshot(db: Session, order_id: str):
-    from app.models import CarePlan
 
     return (
         db.query(

@@ -2,7 +2,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -13,6 +13,21 @@ from app.orders.serializers import serialize_order, serialize_order_status
 from app.orders.schemas import OrderAccepted, OrderCreate, OrderListResponse, OrderRead, OrderStatusRead, WarningResponse
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+@router.get("/{order_id}/careplan/download", response_class=PlainTextResponse, responses={
+    404: {"description": "CarePlan not yet generated", "content": {
+        "application/json": {"example": {"error": "CarePlan not yet generated"}}
+    }},
+})
+def download_care_plan(order_id: str, db: Session = Depends(get_db)):
+    content = repository.get_completed_care_plan_text(db, order_id)
+    if content is None:
+        return JSONResponse(status_code=404, content={"error": "CarePlan not yet generated"})
+    return PlainTextResponse(
+        content,
+        headers={"Content-Disposition": f'attachment; filename="careplan_order_{order_id}.txt"'},
+    )
 
 
 @router.post(
