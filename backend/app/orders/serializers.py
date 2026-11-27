@@ -32,18 +32,15 @@ def serialize_order(order: Order) -> OrderRead:
     )
 
 
-def serialize_order_status(order: Order) -> OrderStatusRead:
-    """Convert an Order into the minimal polling response."""
-    care_plan_content = (
-        order.care_plan.care_plan_content
-        if order.status == "completed" and order.care_plan is not None
-        else None
-    )
+def serialize_order_status(order) -> OrderStatusRead:
+    from app.orders.repository import PREVIEW_LENGTH
 
+    preview = order.preview
+    if preview and len(preview) > PREVIEW_LENGTH:
+        preview = preview[:PREVIEW_LENGTH] + "…"
     return OrderStatusRead(
-        id=order.id,
+        order_id=order.id,
         status=order.status,
-        error_message=order.error_message,
-        has_care_plan=order.care_plan is not None,
-        care_plan_content=care_plan_content,
+        error_message=order.error_message if order.status == "failed" else None,
+        careplan_preview=preview,
     )

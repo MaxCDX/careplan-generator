@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import { getOrderStatus } from '../lib/api'
+import { getCarePlanContent, getOrderStatus } from '../lib/api'
 
 type UseOrderPollingArgs = {
   orderId: string
@@ -24,7 +24,8 @@ export function useOrderPolling({
       return
     }
 
-    let pollTimer: ReturnType<typeof setInterval> | null = null
+    const controller = new AbortController()
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
     let timeoutTimer: ReturnType<typeof setTimeout> | null = null
     let stopped = false
 
@@ -34,7 +35,7 @@ export function useOrderPolling({
         setIsPolling(false)
       }
       if (pollTimer) {
-        clearInterval(pollTimer)
+        clearTimeout(pollTimer)
       }
       if (timeoutTimer) {
         clearTimeout(timeoutTimer)
@@ -57,16 +58,29 @@ export function useOrderPolling({
 
         if (order.status === 'completed') {
           setTimedOut(false)
-          setCarePlanContent(order.care_plan_content || 'Care plan completed, but content is not available yet.')
           stopPolling()
+          try {
+            const content = await getCarePlanContent(orderId, controller.signal)
+            if (!controller.signal.aborted) {
+              setCarePlanContent(content || 'Care plan completed, but content is not available yet.')
+            }
+          } catch {
+            if (!controller.signal.aborted) {
+              setError('Unable to load the completed care plan. Please refresh later.')
+            }
+          }
+          return
         }
 
         if (order.status === 'failed') {
           setTimedOut(false)
           setError(order.error_message || 'Care plan generation failed. Please try again later.')
           stopPolling()
+          return
         }
+        pollTimer = setTimeout(pollOrder, 3000)
       } catch {
+        if (stopped) return
         setError('Unable to refresh order status. Please refresh later.')
         stopPolling()
       }
@@ -75,13 +89,15 @@ export function useOrderPolling({
     // Polling reads Order.status while Celery updates the database asynchronously.
     setIsPolling(true)
     pollOrder()
-    pollTimer = setInterval(pollOrder, 3000)
     timeoutTimer = setTimeout(() => {
       setTimedOut(true)
       setError('Care plan is still processing. Please refresh later.')
       stopPolling()
     }, 90000)
 
-    return () => stopPolling(false)
+    return () => {
+      controller.abort()
+      stopPolling(false)
+    }
   }, [orderId, setCarePlanContent, setError, setIsPolling, setOrderStatus, setTimedOut])
 }

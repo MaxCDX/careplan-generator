@@ -1,7 +1,8 @@
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -12,6 +13,32 @@ from app.orders.serializers import serialize_order, serialize_order_status
 from app.orders.schemas import OrderAccepted, OrderCreate, OrderListResponse, OrderRead, OrderStatusRead, WarningResponse
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+@router.post("/{order_id}/retry", response_model=OrderAccepted, status_code=202, responses={
+    404: {"description": "Order not found"}, 409: {"description": "Order is not failed"},
+    503: {"description": "Queue unavailable"},
+})
+def retry_order(order_id: str, db: Session = Depends(get_db)):
+    current = service.retry_failed_order(db, order_id)
+    if current is not None:
+        return JSONResponse(status_code=409, content={"error": "Order is not in failed status", "current_status": current})
+    return OrderAccepted(order_id=order_id, status="processing", message="CarePlan generation restarted")
+
+
+@router.get("/{order_id}/careplan/download", response_class=PlainTextResponse, responses={
+    404: {"description": "CarePlan not yet generated", "content": {
+        "application/json": {"example": {"error": "CarePlan not yet generated"}}
+    }},
+})
+def download_care_plan(order_id: str, db: Session = Depends(get_db)):
+    content = repository.get_completed_care_plan_text(db, order_id)
+    if content is None:
+        return JSONResponse(status_code=404, content={"error": "CarePlan not yet generated"})
+    return PlainTextResponse(
+        content,
+        headers={"Content-Disposition": f'attachment; filename="careplan_order_{order_id}.txt"'},
+    )
 
 
 @router.post(
@@ -67,12 +94,16 @@ def list_orders(
     page_size: int = Query(default=20, ge=1, le=100),
     order_status: Literal["queued", "processing", "completed", "failed"] | None = Query(default=None, alias="status"),
     patient_name: str | None = Query(default=None),
+    patient_id: UUID | None = None,
+    provider_id: UUID | None = None,
     db: Session = Depends(get_db),
 ):
     """Return a filtered page of Orders, newest first."""
     count, orders = repository.list_orders(
         db, page=page, page_size=page_size,
         order_status=order_status, patient_name=patient_name,
+        patient_id=str(patient_id) if patient_id is not None else None,
+        provider_id=str(provider_id) if provider_id is not None else None,
     )
     return OrderListResponse(
         count=count, page=page, page_size=page_size,
@@ -80,10 +111,10 @@ def list_orders(
     )
 
 
-@router.get("/{order_id}/status", response_model=OrderStatusRead)
+@router.get("/{order_id}/status", response_model=OrderStatusRead, response_model_exclude_none=True)
 def get_order_status(order_id: str, db: Session = Depends(get_db)):
     """Return minimal order workflow state for frontend polling."""
-    order = repository.get_order(db, order_id)
+    order = repository.get_status_snapshot(db, order_id)
     if not order:
         raise NotFoundError(
             code="ORDER_NOT_FOUND",

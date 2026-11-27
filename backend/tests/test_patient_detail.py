@@ -44,6 +44,11 @@ def test_patient_detail_returns_ordered_history_for_this_patient():
                 for order_id in reversed(order_ids[:2])
             ],
         }
+        history = client.get(f"/patients/{patient_id}/orders")
+        assert history.status_code == 200
+        assert history.json() == {
+            "patient_id": patient_id, "patient_name": "John A. Smith", "orders": response.json()["orders"],
+        }
 
 
 def test_order_intake_patient_detail(monkeypatch):
@@ -65,6 +70,12 @@ def test_registered_patient_without_orders_and_missing_patient():
         db.add(patient)
         db.commit()
         assert client.get(f"/patients/{patient.id}").json()["orders"] == []
+        history = client.get(f"/patients/{patient.id}/orders")
+        assert history.status_code == 200
+        assert history.json() == {"patient_id": patient.id, "patient_name": "John Doe", "orders": []}
+        missing_history = client.get(f"/patients/{uuid4()}/orders")
+        assert missing_history.status_code == 404
+        assert missing_history.json()["code"] == "PATIENT_NOT_FOUND"
         missing = client.get(f"/patients/{uuid4()}")
         assert missing.status_code == 404
         assert missing.json()["code"] == "PATIENT_NOT_FOUND"

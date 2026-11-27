@@ -1,6 +1,8 @@
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.orders.models import Order
+from app.models import CarePlan
 from app.orders.schemas import OrderCreate
 from app.patients.repository import full_name_contains, get_or_create_patient
 from app.providers.repository import get_or_create_provider
@@ -42,6 +44,25 @@ def get_latest_order_for_patient_and_medication(db: Session, *, patient_id: str,
     )
 
 
+def claim_failed_order(db: Session, order_id: str) -> bool:
+    claimed = db.query(Order).filter(Order.id == order_id, Order.status == "failed").update(
+        {Order.status: "processing", Order.error_message: None}, synchronize_session=False,
+    )
+    db.commit()  # Make the restart visible to the worker before dispatch.
+    return claimed == 1
+
+
+def get_current_status(db: Session, order_id: str) -> str | None:
+    return db.query(Order.status).filter(Order.id == order_id).scalar()
+
+
+def restore_failed_retry(db: Session, order_id: str, message: str) -> None:
+    db.query(Order).filter(Order.id == order_id, Order.status == "processing").update(
+        {Order.status: "failed", Order.error_message: message}, synchronize_session=False,
+    )
+    db.commit()
+
+
 def mark_order_failed(db: Session, order_id: str, error_message: str) -> None:
     """Persist a safe failed state when dispatch cannot be completed."""
     order = db.query(Order).filter(Order.id == order_id).one_or_none()
@@ -57,11 +78,16 @@ def mark_order_failed(db: Session, order_id: str, error_message: str) -> None:
 def list_orders(
     db: Session, *, page: int = 1, page_size: int = 20,
     order_status: str | None = None, patient_name: str | None = None,
+    patient_id: str | None = None, provider_id: str | None = None,
 ) -> tuple[int, list[Order]]:
     """Count matching Orders and load only the requested page with related rows."""
     query = db.query(Order)
     if order_status is not None:
         query = query.filter(Order.status == order_status)
+    if patient_id is not None:
+        query = query.filter(Order.patient_id == patient_id)
+    if provider_id is not None:
+        query = query.filter(Order.provider_id == provider_id)
     cleaned_name = patient_name.strip() if patient_name is not None else ""
     if cleaned_name:
         query = query.join(Order.patient).filter(full_name_contains(cleaned_name))
@@ -76,6 +102,33 @@ def list_orders(
         .all()
     )
     return count, orders
+
+
+PREVIEW_LENGTH = 200
+
+
+def get_completed_care_plan_text(db: Session, order_id: str) -> str | None:
+    return (
+        db.query(CarePlan.care_plan_content)
+        .join(CarePlan.order)
+        .filter(Order.id == order_id, Order.status == "completed")
+        .scalar()
+    )
+
+
+def get_status_snapshot(db: Session, order_id: str):
+
+    return (
+        db.query(
+            Order.id, Order.status, Order.error_message,
+            case((Order.status == "completed", func.substr(
+                CarePlan.care_plan_content, 1, PREVIEW_LENGTH + 1
+            ))).label("preview"),
+        )
+        .outerjoin(Order.care_plan)
+        .filter(Order.id == order_id)
+        .one_or_none()
+    )
 
 
 def get_order(db: Session, order_id: str) -> Order | None:

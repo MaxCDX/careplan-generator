@@ -332,14 +332,22 @@ The response includes the total match count and a page of patient summaries with
 
 ### Other endpoints
 
+`POST /providers` registers a name and a 10-digit NPI string (201).
+For `409 PROVIDER_POSSIBLE_DUPLICATE`, review the existing provider ID and NPI
+in `detail`; resubmit with `confirm: true` to register a distinct provider.
+`409 PROVIDER_NPI_CONFLICT` always blocks creation.
+
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /patients/{patient_id}` | Read a patient profile with additional diagnoses, medication history, and order summaries (newest first). |
+| `GET /patients/{patient_id}/orders` | Get the patient's UUID, full name and all order summaries, newest first. |
 | `PUT /patients/{patient_id}` | Update supplied fields, e.g. `{"weight_kg":75}`. MRN is immutable. Supplied diagnosis and medication lists replace their previous contents; `[]` clears them. Returns an update summary with `updated_at`. |
 | `DELETE /patients/{patient_id}` | Delete a patient with no orders and their diagnosis and medication rows (204). Active orders return 409 with `detail.active_orders`; historical orders also block deletion. An unknown patient returns 404. |
 | `POST /external-orders/{source}` | Submit a partner payload through the same Order workflow. |
 | `GET /orders/{order_id}` | Read one Order with patient and provider details. |
-| `GET /orders/{order_id}/status` | Poll background generation status. |
+| `GET /orders/{order_id}/status` | Poll for `order_id` and `status`. Completion includes a short `careplan_preview`; failure includes a safe `error_message`. Fetch the full text once from Order detail after completion. |
+| `GET /orders/{order_id}/careplan/download` | Download the completed CarePlan as a UTF-8 text attachment. Returns 404 until the order is completed and the plan exists. |
+| `POST /orders/{order_id}/retry` | Restart generation for a failed order (202). Other states return 409 with the current status. |
 | `GET /care-plans` · `GET /care-plans/{care_plan_id}` | List or retrieve generated care plans. |
 
 See [interactive API docs](http://localhost:8000/docs) for request and response schemas when running locally.
@@ -348,7 +356,8 @@ See [interactive API docs](http://localhost:8000/docs) for request and response 
 
 ## Orders List Pagination and Filtering
 
-`GET /orders?status=failed&patient_name=John` lists matching orders, newest first. Both filters are optional and can be combined.
+`GET /orders?status=failed&patient_name=John` lists matching orders, newest first.
+Optional `patient_id` and `provider_id` filters accept UUIDs. All supplied filters use AND.
 
 Both patient and order lists return `{count, page, page_size, results}`. `count` is the filtered total before pagination. Pages start at 1, default to 20 items, and allow up to 100 items. A page past the last match returns an empty `results` array.
 
